@@ -77,7 +77,6 @@ app.use('/test', async (req, res) => {
         res.status(500).send(`Error in proxy server: ${error.message}`);
     }
 });
-
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
