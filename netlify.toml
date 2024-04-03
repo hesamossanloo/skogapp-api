@@ -1,0 +1,12 @@
+[build]
+  functions = "netlify/functions"
+
+[context.dev.environment]
+    GEODATA_BASIC_AUTH = "*****"
+    NODE_ENV = "development"
+[dev]
+    command = "nodemon netlify/functions/wmsHeader.js" # Replace with your server start command
+    port = 5001 # The port your server is running on
+    publish = "." # The directory to publish (usually the directory containing your server files)
+[functions]
+    directory = "netlify/functions/"
