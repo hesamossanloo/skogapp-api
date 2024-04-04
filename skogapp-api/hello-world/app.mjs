@@ -59,14 +59,16 @@ export const lambdaHandler = async (event, context) => {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.arrayBuffer();
+        const arrayBuffer = await response.arrayBuffer();
+        const data = Buffer.from(arrayBuffer).toString('base64');
+
         return {
             statusCode: 200,
             headers: {
-              'Content-Type': response.headers.get('Content-Type'),
-              ...corsResponseHeader
+                'Content-Type': response.headers.get('Content-Type'),
+                ...corsResponseHeader
             },
-            body: data.toString('base64'),
+            body: data,
             isBase64Encoded: true,
         };
     } catch (error) {
