@@ -5,3 +5,4 @@ node_modules
 
 # Local Netlify folder
 .netlify
+skogapp-api/AWSCLIV2.pkg
