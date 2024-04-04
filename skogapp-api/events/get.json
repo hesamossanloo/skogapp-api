@@ -1,11 +1,21 @@
 {
-  "body": "{\"message\": \"hello world\"}",
+  "body": "",
   "resource": "/{proxy+}",
   "path": "/path/to/resource",
-  "httpMethod": "POST",
-  "isBase64Encoded": false,
+  "httpMethod": "GET",
+  "isBase64Encoded": true,
   "queryStringParameters": {
-    "foo": "bar"
+      "bbox": "1286588.0600960867,8379944.284960444,1291480.029906338,8384836.2547706915",
+      "crs": "EPSG:3857",
+      "format": "image/jpeg",
+      "height": "256",
+      "layers": "0",
+      "request": "GetMap",
+      "service": "WMS",
+      "styles": "",
+      "transparent": "false",
+      "version": "1.3.0",
+      "width": "256"
   },
   "pathParameters": {
     "proxy": "/path/to/resource"

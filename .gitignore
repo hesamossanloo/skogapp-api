@@ -1,8 +1,3 @@
 .history
 node_modules
-.vscode/launch.json
-.env
-
-# Local Netlify folder
-.netlify
-skogapp-api/AWSCLIV2.pkg
+*.pkg
