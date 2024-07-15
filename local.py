@@ -23,7 +23,8 @@ def create_query(inputs):
 
     matrikkelnummertekst_conditions = ", ".join(
         [f"'{mn}'" for mn in matrikkelnummertekst_list])
-    query = f"kommunenummer = '{kommunenummer}' AND matrikkelnummertekst IN ({matrikkelnummertekst_conditions})"
+    query = f"kommunenummer = '{kommunenummer}' AND matrikkelnummertekst IN ({
+        matrikkelnummertekst_conditions})"
     return query
 
 
@@ -43,7 +44,8 @@ def filter_features():
     try:
         conn = psycopg2.connect(**conn_params)
         cursor = conn.cursor()
-        sql_query = f"SELECT ST_AsGeoJSON(geom) AS geojson FROM {layer_name} WHERE {query_condition}"
+        sql_query = f"SELECT ST_AsGeoJSON(geom) AS geojson FROM {
+            layer_name} WHERE {query_condition}"
         cursor.execute(sql_query)
         rows = cursor.fetchall()
     except Exception as e:
@@ -55,7 +57,8 @@ def filter_features():
 
     # Convert rows to GeoDataFrame
     geojson_list = [json.loads(row[0]) for row in rows if row[0]]
-    features = [{'type': 'Feature', 'geometry': gj, 'properties': {}} for gj in geojson_list if gj.get('type') == 'MultiPolygon']
+    features = [{'type': 'Feature', 'geometry': gj, 'properties': {}}
+                for gj in geojson_list if gj.get('type') == 'MultiPolygon']
 
     if not features:
         return jsonify({'error': 'No valid geometries found'}), 404
@@ -66,45 +69,11 @@ def filter_features():
     if gdf.crs != 'epsg:4326':
         gdf = gdf.to_crs('epsg:4326')
 
-    # Ensure /tmp directory exists
-    tmp_dir = '/tmp'
-    if not os.path.exists(tmp_dir):
-        print(f"Creating directory: {tmp_dir}")
-        os.makedirs(tmp_dir)
-
-    # Test writing a dummy file to /tmp
-    test_file_path = os.path.join(tmp_dir, 'test_file.txt')
-    try:
-        with open(test_file_path, 'w') as test_file:
-            test_file.write('This is a test file.')
-        print(f"Test file written to {test_file_path}")
-    except Exception as e:
-        print(f"Error writing test file: {e}")
-
-    # Save the filtered GeoDataFrame to a GeoJSON file
-    output_geojson_path_akerhus = os.path.join(tmp_dir, 'output_4326_postgis.geojson')
-    try:
-        print(f"Saving GeoDataFrame to {output_geojson_path_akerhus}")
-        gdf.to_file(output_geojson_path_akerhus, driver='GeoJSON')
-        if os.path.exists(output_geojson_path_akerhus):
-            print(f"File successfully saved to {output_geojson_path_akerhus}")
-        else:
-            print(f"File was not found after saving attempt: {output_geojson_path_akerhus}")
-    except Exception as e:
-        print(f"Error saving file: {e}")
-        return jsonify({'error': 'Failed to save GeoJSON file'}), 500
-
-    # List files in /tmp for debugging
-    print("Listing files in /tmp:")
-    for file_name in os.listdir(tmp_dir):
-        print(f"- {file_name}")
-
     end_time_akerhus = time.time()
     elapsed_time_akerhus = end_time_akerhus - start_time_akerhus
 
     response = {
         'filtered_features_akerhus': gdf.to_json(),
-        'output_file_akerhus': output_geojson_path_akerhus,
         'elapsed_time_to_prep_akerhus': elapsed_time_akerhus,
     }
     return jsonify(response)

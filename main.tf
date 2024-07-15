@@ -2,10 +2,25 @@ provider "aws" {
   region = var.aws_region
 }
 
+resource "aws_secretsmanager_secret" "postgis_secret" {
+  name = var.secret_name
+}
+
+resource "aws_secretsmanager_secret_version" "postgis_secret_version" {
+  secret_id = aws_secretsmanager_secret.postgis_secret.id
+
+  secret_string = jsonencode({
+    POSTGIS_DBNAME        = var.postgis_dbname
+    POSTGIS_USERNAME      = var.postgis_username
+    POSTGIS_PASSWORD      = var.postgis_password
+    POSTGIS_HOST          = var.postgis_host
+  })
+}
+
 resource "aws_lambda_function" "skogapp_teig_lambda" {
   function_name = "skogappTeigLambda"
   handler       = "run.lambda_handler"
-  runtime       = "python3.11"
+  runtime       = "python3.12"
 
   filename         = "deployment_package.zip"
   source_code_hash = filebase64sha256("deployment_package.zip")
@@ -15,10 +30,7 @@ resource "aws_lambda_function" "skogapp_teig_lambda" {
 
   environment {
     variables = {
-      POSTGIS_DBNAME = var.postgis_dbname
-      POSTGIS_USERNAME = var.postgis_username
-      POSTGIS_PASSWORD = var.postgis_password
-      POSTGIS_HOST = var.postgis_host
+      SECRET_NAME = var.secret_name
     }
   }
 }
@@ -45,6 +57,24 @@ resource "aws_iam_role_policy_attachment" "lambda_exec_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy" "lambda_secret_access_policy" {
+  name = "lambda_secret_access_policy"
+  role = aws_iam_role.lambda_exec_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ],
+        Effect   = "Allow",
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.secret_name}*"
+      }
+    ]
+  })
+}
+
 resource "aws_api_gateway_rest_api" "skogapp_api" {
   name        = "skogapp_api"
   description = "API for SkogApp"
@@ -64,12 +94,12 @@ resource "aws_api_gateway_method" "skogapp_method" {
 }
 
 resource "aws_api_gateway_integration" "skogapp_integration" {
-  rest_api_id = aws_api_gateway_rest_api.skogapp_api.id
-  resource_id = aws_api_gateway_resource.skogapp_resource.id
-  http_method = aws_api_gateway_method.skogapp_method.http_method
-  type        = "AWS_PROXY"
+  rest_api_id             = aws_api_gateway_rest_api.skogapp_api.id
+  resource_id             = aws_api_gateway_resource.skogapp_resource.id
+  http_method             = aws_api_gateway_method.skogapp_method.http_method
+  type                    = "AWS_PROXY"
   integration_http_method = "POST"
-  uri         = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.skogapp_teig_lambda.arn}/invocations"
+  uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.skogapp_teig_lambda.arn}/invocations"
 }
 
 resource "aws_lambda_permission" "skogapp_api_gateway" {

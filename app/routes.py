@@ -3,17 +3,22 @@ import psycopg2
 import time
 import geopandas as gpd
 from flask import Blueprint, json, request, jsonify
-from dotenv import load_dotenv
+import boto3
 
-load_dotenv()  # This loads the environment variables from .env
 main = Blueprint('main', __name__)
 
-# Now you can use os.environ to access your variables
-postgis_dbname = os.environ.get("POSTGIS_DBNAME")
-postgis_username = os.environ.get("POSTGIS_USERNAME")
-postgis_password = os.environ.get("POSTGIS_PASSWORD")
-postgis_host = os.environ.get("POSTGIS_HOST")
+# Initialize Secrets Manager client
+secrets_client = boto3.client('secretsmanager')
+secret_name = os.getenv('SECRET_NAME')
 
+# Fetch secrets
+response = secrets_client.get_secret_value(SecretId=secret_name)
+secrets = json.loads(response['SecretString'])
+
+postgis_dbname = secrets.get("POSTGIS_DBNAME")
+postgis_username = secrets.get("POSTGIS_USERNAME")
+postgis_password = secrets.get("POSTGIS_PASSWORD")
+postgis_host = secrets.get("POSTGIS_HOST")
 
 # Database connection parameters
 conn_params = {

@@ -2,3 +2,5 @@ flask
 geopandas
 psycopg2-binary
 mangum
+dotenv
+boto3
