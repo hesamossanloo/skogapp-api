@@ -39,6 +39,7 @@ jobs:
         pip install --target ./package -r requirements.txt
         cp -r app package/
         cp run.py package/
+        cp .env package/
         cd package
         zip -r ../deployment_package.zip .
         cd ..
@@ -53,4 +54,4 @@ jobs:
     - name: Deploy to AWS Lambda
       run: |
         terraform init
-        terraform apply -auto-approve -var="postgis_dbname=${{ secrets.POSTGIS_DBNAME }}" -var="postgis_username=${{ secrets.POSTGIS_USERNAME }}" -var="postgis_password=${{ secrets.POSTGIS_PASSWORD }}" -var="postgis_host=${{ secrets.POSTGIS_HOST }}"
+        terraform apply -auto-approve

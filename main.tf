@@ -2,6 +2,8 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_caller_identity" "current" {}
+
 resource "aws_secretsmanager_secret" "postgis_secret" {
   name = var.secret_name
 }
@@ -10,10 +12,10 @@ resource "aws_secretsmanager_secret_version" "postgis_secret_version" {
   secret_id = aws_secretsmanager_secret.postgis_secret.id
 
   secret_string = jsonencode({
-    POSTGIS_DBNAME        = var.postgis_dbname
-    POSTGIS_USERNAME      = var.postgis_username
-    POSTGIS_PASSWORD      = var.postgis_password
-    POSTGIS_HOST          = var.postgis_host
+    POSTGIS_DBNAME   = var.postgis_dbname,
+    POSTGIS_USERNAME = var.postgis_username,
+    POSTGIS_PASSWORD = var.postgis_password,
+    POSTGIS_HOST     = var.postgis_host
   })
 }
 
@@ -42,8 +44,8 @@ resource "aws_iam_role" "lambda_exec_role" {
     Version = "2012-10-17",
     Statement = [
       {
-        Action = "sts:AssumeRole",
-        Effect = "Allow",
+        Action    = "sts:AssumeRole",
+        Effect    = "Allow",
         Principal = {
           Service = "lambda.amazonaws.com"
         }
