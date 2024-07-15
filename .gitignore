@@ -1,0 +1,12 @@
+.history
+node_modules
+*.pkg
+.env
+.venv
+outputs
+*pycache*
+package
+logs
+.terraform
+skogapp-api/.terraform.lock.hcl
+*.zip

@@ -4,7 +4,6 @@ variable "aws_region" {
   default     = "eu-north-1"
 }
 
-# PostGIS
 variable "postgis_dbname" {
   description = "The name of the PostGIS database"
   type        = string
@@ -23,4 +22,10 @@ variable "postgis_password" {
 variable "postgis_host" {
   description = "The hostname of the PostGIS database"
   type        = string
+}
+
+variable "secret_name" {
+  description = "The name of the Secrets Manager secret"
+  type        = string
+  default     = "skogapp-api/postgis/credentials"
 }
