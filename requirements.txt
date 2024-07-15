@@ -2,5 +2,5 @@ flask
 geopandas
 psycopg2-binary
 mangum
-dotenv
+python-dotenv
 boto3
