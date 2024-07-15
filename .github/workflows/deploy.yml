@@ -16,20 +16,22 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: '3.11'
+        python-version: '3.12'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install geopandas mangum
 
     - name: Set environment variables
       run: |
         echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
         echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
         echo "AWS_DEFAULT_REGION=eu-north-1" >> $GITHUB_ENV
-        echo "GDB_PATH_AKERHUS=s3://matrikkel-32-akershus-25833-gdb--eun1-az1--x-s3/Matrikkel_32_Akershus_25833.gdb/" >> $GITHUB_ENV
+        echo "POSTGIS_DBNAME=${{ secrets.POSTGIS_DBNAME }}" >> $GITHUB_ENV
+        echo "POSTGIS_USERNAME=${{ secrets.POSTGIS_USERNAME }}" >> $GITHUB_ENV
+        echo "POSTGIS_PASSWORD=${{ secrets.POSTGIS_PASSWORD }}" >> $GITHUB_ENV
+        echo "POSTGIS_HOST=${{ secrets.POSTGIS_HOST }}" >> $GITHUB_ENV
 
     - name: Zip the deployment package
       run: |
@@ -51,4 +53,4 @@ jobs:
     - name: Deploy to AWS Lambda
       run: |
         terraform init
-        terraform apply -auto-approve
+        terraform apply -auto-approve -var="aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}" -var="aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" -var="postgis_dbname=${{ secrets.POSTGIS_DBNAME }}" -var="postgis_username=${{ secrets.POSTGIS_USERNAME }}" -var="postgis_password=${{ secrets.POSTGIS_PASSWORD }}" -var="postgis_host=${{ secrets.POSTGIS_HOST }}"
