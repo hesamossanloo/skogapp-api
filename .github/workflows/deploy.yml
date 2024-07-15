@@ -1,9 +1,9 @@
-name: Deploy to AWS Lambda using terraform
+name: Deploy to AWS Lambda
 
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   deploy:
@@ -53,4 +53,4 @@ jobs:
     - name: Deploy to AWS Lambda
       run: |
         terraform init
-        terraform apply -auto-approve -var="aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}" -var="aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" -var="postgis_dbname=${{ secrets.POSTGIS_DBNAME }}" -var="postgis_username=${{ secrets.POSTGIS_USERNAME }}" -var="postgis_password=${{ secrets.POSTGIS_PASSWORD }}" -var="postgis_host=${{ secrets.POSTGIS_HOST }}"
+        terraform apply -auto-approve -var="postgis_dbname=${{ secrets.POSTGIS_DBNAME }}" -var="postgis_username=${{ secrets.POSTGIS_USERNAME }}" -var="postgis_password=${{ secrets.POSTGIS_PASSWORD }}" -var="postgis_host=${{ secrets.POSTGIS_HOST }}"
