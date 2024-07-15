@@ -1,0 +1,4 @@
+flask
+geopandas
+psycopg2-binary
+mangum

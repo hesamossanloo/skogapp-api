@@ -1,57 +1,88 @@
 import os
+import psycopg2
 import time
 import geopandas as gpd
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, json, request, jsonify
+from dotenv import load_dotenv
 
+load_dotenv()  # This loads the environment variables from .env
 main = Blueprint('main', __name__)
 
-gdb_path_akerhus = '/Users/hesam.ossanloo/Downloads/Startup/SkogApp/Mads/Kartverket/Matrikkel_32_Akershus_25833.gdb'
+# Now you can use os.environ to access your variables
+postgis_dbname = os.environ.get("POSTGIS_DBNAME")
+postgis_username = os.environ.get("POSTGIS_USERNAME")
+postgis_password = os.environ.get("POSTGIS_PASSWORD")
+postgis_host = os.environ.get("POSTGIS_HOST")
+
+
+# Database connection parameters
+conn_params = {
+    'dbname': postgis_dbname,
+    'user': postgis_username,
+    'password': postgis_password,
+    'host': postgis_host
+}
 
 
 def create_query(inputs):
-    queries = []
-    for input_str in inputs:
-        # Split on the first '-' only
-        parts = input_str.split('-', 1)
-        if len(parts) == 2:
-            kommunenummer, matrikkelnummertekst = parts
-            query = f"(kommunenummer == '{kommunenummer}') & (matrikkelnummertekst == '{
-                matrikkelnummertekst}')"
-            queries.append(query)
-        else:
-            # Handle the case where the input does not conform to expected format
-            print(f"Invalid input format: {input_str}")
-    return " | ".join(queries)
+    kommunenummer = inputs.get('kommunenummer')
+    matrikkelnummertekst_list = inputs.get('matrikkelnummertekst')
+    if not kommunenummer or not matrikkelnummertekst_list:
+        return None
+
+    matrikkelnummertekst_conditions = ", ".join(
+        [f"'{mn}'" for mn in matrikkelnummertekst_list])
+    query = f"kommunenummer = '{kommunenummer}' AND matrikkelnummertekst IN ({
+        matrikkelnummertekst_conditions})"
+    return query
 
 
 @main.route('/filter', methods=['POST'])
 def filter_features():
     data = request.get_json()
-    inputs = data.get('inputs', [])
+    inputs = data.get('inputs', {})
     layer_name = 'teig'
 
-    query = create_query(inputs)
+    query_condition = create_query(inputs)
+    if query_condition is None:
+        return jsonify({'error': 'Invalid input format'}), 400
 
-    # Read, Filter and Project Akerhus
-    start_time_akerhus = time.time()
-    gdf_akerhus = gpd.read_file(gdb_path_akerhus, layer=layer_name)
-    filtered_gdf_akerhus = gdf_akerhus.query(query)
-    if filtered_gdf_akerhus.crs != 'epsg:4326':
-        filtered_gdf_akerhus = filtered_gdf_akerhus.to_crs('epsg:4326')
+    start_time = time.time()
 
-    output_geojson_path_akerhus = os.path.join(
-        'outputs', 'output_4326_akerhus.geojson')
-    filtered_gdf_akerhus.to_file(output_geojson_path_akerhus, driver='GeoJSON')
+    # Connect to the database and execute the query
+    try:
+        conn = psycopg2.connect(**conn_params)
+        cursor = conn.cursor()
+        sql_query = f"SELECT ST_AsGeoJSON(geom) AS geojson FROM {
+            layer_name} WHERE {query_condition}"
+        cursor.execute(sql_query)
+        rows = cursor.fetchall()
+    except Exception as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Database query failed'}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-    end_time_akerhus = time.time()
-    elapsed_time_akerhus = end_time_akerhus - start_time_akerhus
+    # Convert rows to GeoDataFrame
+    geojson_list = [json.loads(row[0]) for row in rows if row[0]]
+    features = [{'type': 'Feature', 'geometry': gj, 'properties': {}}
+                for gj in geojson_list if gj.get('type') == 'MultiPolygon']
 
-    # print the elapsed time for each query
-    print(f"Elapsed time to prepare Akerhus: {elapsed_time_akerhus}")
+    if not features:
+        return jsonify({'error': 'No valid geometries found'}), 404
+
+    gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:25833")
+
+    # Reproject to EPSG:4326 if necessary
+    if gdf.crs != 'epsg:4326':
+        gdf = gdf.to_crs('epsg:4326')
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
 
     response = {
-        'filtered_features_akerhus': filtered_gdf_akerhus.astype(str).to_json(),
-        'output_file_akerhus': output_geojson_path_akerhus,
-        'elapsed_time_to_prep_akerhus': elapsed_time_akerhus,
+        'filtered_features': gdf.to_json(),
+        'elapsed_time_to_prep_geojson': elapsed_time,
     }
     return jsonify(response)
