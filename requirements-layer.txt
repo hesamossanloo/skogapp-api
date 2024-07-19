@@ -1,0 +1,7 @@
+shapely
+pyproj
+# You must also copy the all the folder from the 
+# /Users/hesam.ossanloo/Projects/Startup/SkogApp/skogapp-dashboard/awslambda-psycopg2/psycopg2-3.11
+# and include them in the lambda-layer folder
+#  BTW the lambda layer folder must have the specific structure that is required by AWS
+
