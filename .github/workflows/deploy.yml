@@ -36,7 +36,7 @@ jobs:
     - name: Zip the deployment package
       run: |
         mkdir package
-        pip install --target ./package -r requirements.txt
+        pip3.11 install --target ./package -r requirements.txt
         cp -r app package/
         cp run.py package/
         cp .env package/
@@ -54,4 +54,15 @@ jobs:
     - name: Deploy to AWS Lambda
       run: |
         terraform init
-        terraform apply -auto-approve
+        terraform apply -auto-approve \
+          -var="aws_region=${{ secrets.AWS_DEFAULT_REGION }}" \
+          -var="postgis_dbname=${{ secrets.POSTGIS_DBNAME }}" \
+          -var="postgis_username=${{ secrets.POSTGIS_USERNAME }}" \
+          -var="postgis_password=${{ secrets.POSTGIS_PASSWORD }}" \
+          -var="postgis_host=${{ secrets.POSTGIS_HOST }}" \
+          -var="deployment_s3_bucket_name=${{ secrets.DEPLOYMENT_S3_BUCKET_NAME }}" \
+          -var="aws_secret_name=${{ secrets.AWS_SECRET_NAME }}" \
+          -var="aws_vpc_id=${{ secrets.AWS_VPC_ID }}" \
+          -var="aws_subnet_ids=${{ secrets.AWS_SUBNET_IDS }}" \
+          -var="rds_sg_id=${{ secrets.AWS_RDS_SG_ID }}"
+        

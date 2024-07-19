@@ -10,3 +10,8 @@ logs
 .terraform
 skogapp-api/.terraform.lock.hcl
 *.zip
+.terraform.lock.hcl
+terraform.tfstate.backup
+zips
+lambda-layers
+skogappteigfilter-lambda-package
