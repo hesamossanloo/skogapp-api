@@ -7,25 +7,20 @@ import boto3
 
 main = Blueprint('main', __name__)
 
-# Initialize Secrets Manager client
-secrets_client = boto3.client('secretsmanager')
-secret_name = os.getenv('SECRET_NAME')
+postgis_dbname = os.getenv('POSTGIS_DBNAME')
+postgis_username = os.getenv('POSTGIS_USERNAME')
+postgis_password = os.getenv('POSTGIS_PASSWORD')
+postgis_host = os.getenv('POSTGIS_HOST')
+print(f"ENV VARS fetched from AWS Lambda ENVs:", postgis_dbname)
 
-# Fetch secrets
-response = secrets_client.get_secret_value(SecretId=secret_name)
-secrets = json.loads(response['SecretString'])
-
-postgis_dbname = secrets.get("POSTGIS_DBNAME")
-postgis_username = secrets.get("POSTGIS_USERNAME")
-postgis_password = secrets.get("POSTGIS_PASSWORD")
-postgis_host = secrets.get("POSTGIS_HOST")
 
 # Database connection parameters
 conn_params = {
     'dbname': postgis_dbname,
     'user': postgis_username,
     'password': postgis_password,
-    'host': postgis_host
+    'host': postgis_host,
+    'port': 5432,
 }
 
 
@@ -37,18 +32,20 @@ def create_query(inputs):
 
     matrikkelnummertekst_conditions = ", ".join(
         [f"'{mn}'" for mn in matrikkelnummertekst_list])
-    query = f"kommunenummer = '{kommunenummer}' AND matrikkelnummertekst IN ({
-        matrikkelnummertekst_conditions})"
+    query = f"kommunenummer = '{kommunenummer}' AND matrikkelnummertekst IN ({matrikkelnummertekst_conditions})"
     return query
 
 
 @main.route('/filter', methods=['POST'])
 def filter_features():
+    print("Filtering features")
     data = request.get_json()
     inputs = data.get('inputs', {})
+    print("Filtering features with inputs:", inputs)
     layer_name = 'teig'
 
     query_condition = create_query(inputs)
+    print("Query condition:", query_condition)
     if query_condition is None:
         return jsonify({'error': 'Invalid input format'}), 400
 
@@ -58,10 +55,10 @@ def filter_features():
     try:
         conn = psycopg2.connect(**conn_params)
         cursor = conn.cursor()
-        sql_query = f"SELECT ST_AsGeoJSON(geom) AS geojson FROM {
-            layer_name} WHERE {query_condition}"
+        sql_query = f"SELECT ST_AsGeoJSON(geom) AS geojson FROM {layer_name} WHERE {query_condition}"
         cursor.execute(sql_query)
         rows = cursor.fetchall()
+        print("Rows fetched: %s", len(rows))
     except Exception as e:
         print(f"Database error: {e}")
         return jsonify({'error': 'Database query failed'}), 500

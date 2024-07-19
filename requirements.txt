@@ -1,6 +1,3 @@
 flask
-geopandas
-psycopg2-binary
-mangum
-python-dotenv
-boto3
+aws-wsgi
+pyproj

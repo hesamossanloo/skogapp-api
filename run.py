@@ -5,6 +5,5 @@ if __name__ == "__main__":
 
 # Lambda handler
 def lambda_handler(event, context):
-    from mangum import Mangum
-    handler = Mangum(app)
-    return handler(event, context)
+    import awsgi
+    return awsgi.response(app, event, context)
