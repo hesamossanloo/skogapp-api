@@ -19,6 +19,43 @@ resource "aws_secretsmanager_secret_version" "postgis_secret_version" {
   })
 }
 
+data "aws_security_group" "existing_lambda_sg" {
+  filter {
+    name   = "group-name"
+    values = ["lambda_sg"]
+  }
+
+  filter {
+    name   = "vpc-id"
+    values = [var.aws_vpc_id]
+  }
+}
+
+resource "aws_security_group" "lambda_sg" {
+  count       = length(data.aws_security_group.existing_lambda_sg.id) == 0 ? 1 : 0
+  name        = "lambda_sg"
+  description = "Security group for Lambda function"
+  vpc_id      = var.aws_vpc_id
+}
+
+resource "aws_security_group_rule" "lambda_ingress_postgres" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = var.rds_sg_id
+  source_security_group_id = length(data.aws_security_group.existing_lambda_sg.id) == 0 ? aws_security_group.lambda_sg[0].id : data.aws_security_group.existing_lambda_sg.id
+}
+
+resource "aws_security_group_rule" "allow_lambda_egress" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"  # All traffic
+  security_group_id = length(data.aws_security_group.existing_lambda_sg.id) == 0 ? aws_security_group.lambda_sg[0].id : data.aws_security_group.existing_lambda_sg.id
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
 resource "aws_lambda_function" "skogapp_teig_lambda" {
   function_name = "skogappTeigLambda"
   handler       = "run.lambda_handler"
@@ -34,6 +71,11 @@ resource "aws_lambda_function" "skogapp_teig_lambda" {
     variables = {
       SECRET_NAME = var.secret_name
     }
+  }
+
+  vpc_config {
+    subnet_ids         = split(",", var.aws_subnet_ids)
+    security_group_ids = [length(data.aws_security_group.existing_lambda_sg.id) == 0 ? aws_security_group.lambda_sg[0].id : data.aws_security_group.existing_lambda_sg.id]
   }
 }
 
@@ -78,7 +120,7 @@ resource "aws_iam_role_policy" "lambda_secret_access_policy" {
 }
 
 resource "aws_api_gateway_rest_api" "skogapp_api" {
-  name        = "skogapp_api"
+  name        = "skogapp-api"
   description = "API for SkogApp"
 }
 
