@@ -11,10 +11,10 @@ main = Blueprint('main', __name__)
 
 # Database connection parameters
 conn_params = {
-    'dbname': os.getenv('POSTGIS_DBNAME', 'postgisDB'),
-    'user': os.getenv('POSTGIS_USER', 'postgres'),
-    'password': os.getenv('POSTGIS_PASSWORD', 'UiLUBELKoTBMv9*$'),
-    'host': os.getenv('POSTGIS_HOST', 'database-postgis-instance.c9iaucgywgv3.eu-north-1.rds.amazonaws.com')
+    'dbname': os.getenv('POSTGIS_DBNAME'),
+    'user': os.getenv('POSTGIS_USER'),
+    'password': os.getenv('POSTGIS_PASSWORD'),
+    'host': os.getenv('POSTGIS_HOST')
 }
 
 
