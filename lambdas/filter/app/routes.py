@@ -2,21 +2,18 @@ import os
 import psycopg2
 import time
 import json
-from flask import Blueprint, Flask, request, jsonify
 from shapely.ops import transform
-from shapely.geometry import shape, mapping, MultiPolygon
+from shapely.geometry import shape, mapping
 from pyproj import Transformer
-
-main = Blueprint('main', __name__)
 
 # Database connection parameters
 conn_params = {
     'dbname': os.getenv('POSTGIS_DBNAME'),
     'user': os.getenv('POSTGIS_USER'),
     'password': os.getenv('POSTGIS_PASSWORD'),
-    'host': os.getenv('POSTGIS_HOST')
+    'host': os.getenv('POSTGIS_HOST'),
+    'port': 5432,
 }
-
 
 def create_query(inputs):
     kommunenummer = inputs.get('kommunenummer')
@@ -29,22 +26,29 @@ def create_query(inputs):
     query = f"kommunenummer = '{kommunenummer}' AND matrikkelnummertekst IN ({matrikkelnummertekst_conditions})"
     return query
 
+def add_cors_headers(response):
+    response['headers'] = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
+    }
+    return response
 
-@main.route('/filter', methods=['POST'])
-def filter_features():
+def filter_features(event, context):
     print("Filtering features")
-    data = request.get_json()
+    data = json.loads(event['body'])
     inputs = data.get('inputs', {})
     print("Filtering features with inputs:", inputs)
     layer_name = 'teig'
-
     query_condition = create_query(inputs)
-    print("Query condition: %s", query_condition)
+    print("Query condition:", query_condition)
     if query_condition is None:
-        return jsonify({'error': 'Invalid input format'}), 400
-
-    start_time_akerhus = time.time()
-
+        response = {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'Invalid input format'})
+        }
+        return add_cors_headers(response)
+    start_time = time.time()
     conn = None
     cursor = None
     try:
@@ -56,41 +60,60 @@ def filter_features():
         print("Rows fetched: %s", len(rows))
     except Exception as e:
         print(f"Database error: {e}")
-        return jsonify({'error': 'Database query failed'}), 500
+        response = {
+            'statusCode': 500,
+            'body': json.dumps({'error': 'Database query failed'})
+        }
+        return add_cors_headers(response)
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-
     # Convert rows to GeoJSON-like structure and then to features
     geojson_list = [json.loads(row[0]) for row in rows if row[0]]
     features = [{'type': 'Feature', 'geometry': gj, 'properties': {}}
                 for gj in geojson_list if gj.get('type') == 'MultiPolygon']
-
     if not features:
-        return jsonify({'error': 'No valid geometries found'}), 404
-
+        response = {
+            'statusCode': 404,
+            'body': json.dumps({'error': 'No valid geometries found'})
+        }
+        return add_cors_headers(response)
     # Transform geometries to EPSG:4326
     in_proj = "EPSG:25833"
     out_proj = "EPSG:4326"
     project = Transformer.from_crs(in_proj, out_proj, always_xy=True).transform
     transformed_features = [{'type': 'Feature', 'geometry': mapping(transform(
         project, shape(f['geometry']))), 'properties': f['properties']} for f in features]
-
-    end_time_akerhus = time.time()
-    elapsed_time_akerhus = end_time_akerhus - start_time_akerhus
-
-    response = {
-        'filtered_features': json.dumps(transformed_features),
-        'elapsed_time_to_prep_geojson': elapsed_time_akerhus,
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    # Assuming transformed_features is already defined and is a list of features
+    feature_collection = {
+        "type": "FeatureCollection",
+        "features": transformed_features
     }
-    return jsonify(response)
+    response = {
+        'statusCode': 200,
+        'body': json.dumps({
+            'filtered_features': feature_collection,
+            'elapsed_time_to_prep_geojson': elapsed_time,
+        })
+    }
+    return add_cors_headers(response)
 
-
-# Set up the Flask app
-app = Flask(__name__)
-app.register_blueprint(main)
-
-if __name__ == '__main__':
-    app.run(debug=True)
+def lambda_handler(event, context):
+    if event['httpMethod'] == 'OPTIONS':
+        response = {
+            'statusCode': 200,
+            'body': json.dumps({})
+        }
+        return add_cors_headers(response)
+    elif event['httpMethod'] == 'POST':
+        return filter_features(event, context)
+    else:
+        response = {
+            'statusCode': 405,
+            'body': json.dumps({'error': 'Method not allowed'})
+        }
+        return add_cors_headers(response)
