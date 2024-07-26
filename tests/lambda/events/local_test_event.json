@@ -1,0 +1,6 @@
+
+{
+  "httpMethod": "POST",
+  "body": "{\"inputs\": {\"kommunenummer\": \"3226\", \"matrikkelnummertekst\": [\"167/1\", \"167/49\", \"167/50\", \"173/1\", \"173/12\"]}}"
+}
+
