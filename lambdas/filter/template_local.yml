@@ -14,8 +14,8 @@ Resources:
       CodeUri: .
       Description: ''
       MemorySize: 128
-      Timeout: 5
-      Handler: run.lambda_handler
+      Timeout: 29
+      Handler: lambda_function.lambda_handler
       Runtime: python3.11
       Architectures:
         - x86_64
@@ -23,11 +23,10 @@ Resources:
         Size: 512
       Environment:
         Variables:
-          POSTGIS_DBNAME: postgisDB
-          POSTGIS_HOST: database-postgis-instance.c9iaucgywgv3.eu-north-1.rds.amazonaws.com
-          POSTGIS_PASSWORD: UiLUBELKoTBMv9*$
-          POSTGIS_USERNAME: postgres
-          SECRET_NAME: postgis/lambda
+          POSTGIS_DBNAME: !Ref POSTGIS_DBNAME
+          POSTGIS_HOST: !Ref POSTGIS_HOST
+          POSTGIS_PASSWORD: !Ref POSTGIS_PASSWORD
+          POSTGIS_USERNAME: !Ref POSTGIS_USERNAME
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 21600
         MaximumRetryAttempts: 2
@@ -86,7 +85,7 @@ Resources:
   Layer1:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      ContentUri: ./shapely
+      ContentUri: /Users/hesam.ossanloo/Projects/Startup/SkogApp/skogapp-dashboard/skogapp-api/lambda-layers/shapely-layer-x86-amd64-p311
       LayerName: shapely
       CompatibleRuntimes:
         - python3.11
@@ -97,7 +96,7 @@ Resources:
   Layer2:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      ContentUri: ./psycopg2
+      ContentUri: /Users/hesam.ossanloo/Projects/Startup/SkogApp/skogapp-dashboard/skogapp-api/lambda-layers/psycopg2-layer-x86-amd64-p311
       LayerName: psycopg2
       CompatibleRuntimes:
         - python3.11
