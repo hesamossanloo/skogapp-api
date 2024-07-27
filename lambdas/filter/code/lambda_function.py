@@ -9,7 +9,7 @@ from pyproj import Transformer
 # Database connection parameters
 conn_params = {
     'dbname': os.getenv('POSTGIS_DBNAME'),
-    'user': os.getenv('POSTGIS_USER'),
+    'user': os.getenv('POSTGIS_USERNAME'),
     'password': os.getenv('POSTGIS_PASSWORD'),
     'host': os.getenv('POSTGIS_HOST'),
     'port': 5432,
@@ -18,8 +18,18 @@ conn_params = {
 def create_query(inputs):
     kommunenummer = inputs.get('kommunenummer')
     matrikkelnummertekst_list = inputs.get('matrikkelnummertekst')
-    if not kommunenummer or not matrikkelnummertekst_list:
-        return None
+    if not kommunenummer:
+        response = {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'Missing kommunenummer'})
+        }
+        return add_cors_headers(response)
+    if not matrikkelnummertekst_list:
+        response = {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'Missing matrikkelnummertekst'})
+        }
+        return add_cors_headers(response)
 
     matrikkelnummertekst_conditions = ", ".join(
         [f"'{mn}'" for mn in matrikkelnummertekst_list])
@@ -35,11 +45,17 @@ def add_cors_headers(response):
     return response
 
 def filter_features(event, context):
-    print("Filtering features")
     data = json.loads(event['body'])
     inputs = data.get('inputs', {})
     print("Filtering features with inputs:", inputs)
     layer_name = 'teig'
+    name = inputs.get('name')
+    if not name:
+        response = {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'Missing name'})
+        }
+        return add_cors_headers(response)
     query_condition = create_query(inputs)
     print("Query condition:", query_condition)
     if query_condition is None:
@@ -52,8 +68,10 @@ def filter_features(event, context):
     conn = None
     cursor = None
     try:
+        print("Connecting to database with dbname: ", conn_params['dbname'])
         conn = psycopg2.connect(**conn_params)
         cursor = conn.cursor()
+        print("Connected to database")
         sql_query = f"SELECT ST_AsGeoJSON(geom) AS geojson FROM {layer_name} WHERE {query_condition}"
         cursor.execute(sql_query)
         rows = cursor.fetchall()
@@ -89,9 +107,11 @@ def filter_features(event, context):
     end_time = time.time()
     elapsed_time = end_time - start_time
     # Assuming transformed_features is already defined and is a list of features
+    
     feature_collection = {
         "type": "FeatureCollection",
-        "features": transformed_features
+        "features": transformed_features,
+        "name": name  # Add the name attribute here
     }
     response = {
         'statusCode': 200,

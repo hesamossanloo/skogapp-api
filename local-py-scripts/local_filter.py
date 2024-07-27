@@ -12,11 +12,10 @@ main = Blueprint('main', __name__)
 # Database connection parameters
 conn_params = {
     'dbname': os.getenv('POSTGIS_DBNAME'),
-    'user': os.getenv('POSTGIS_USER'),
+    'user': os.getenv('POSTGIS_USERNAME'),
     'password': os.getenv('POSTGIS_PASSWORD'),
     'host': os.getenv('POSTGIS_HOST')
 }
-
 
 def create_query(inputs):
     kommunenummer = inputs.get('kommunenummer')
