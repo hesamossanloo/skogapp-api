@@ -28,3 +28,9 @@ sam deploy --template-file packaged.yaml --stack-name SkogAppStack --capabilitie
 ```
 
 Remember all these commands should be run while you are in the `code` folder. Unless the `sam` command won't find the `template.yml` file.
+
+# Test Lambdas
+you can define a json test file somewhere and invoke your lambda like this:
+```
+sam local invoke SkogAppTeigFilter -e tests/lambda/events/local_test_event.json
+```
