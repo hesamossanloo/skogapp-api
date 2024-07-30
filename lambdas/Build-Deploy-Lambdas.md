@@ -1,3 +1,7 @@
+# The GDAL challange 
+was solved by following this:
+https://github.com/lambgeo/docker-lambda
+
 # STEP 1: Build Lambdas
 You Lambda shoul have this structure:
 `lambdas/filter/code/`:

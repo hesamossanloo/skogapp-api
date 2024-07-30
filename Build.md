@@ -41,6 +41,8 @@ aws lambda update-function-code --function-name SkogAppTeigFilter --zip-file fil
 
 ## STEP 6
 add the relevant layers to your lambda. In this case I added the shapely and psycopg2
+Follow these instructions:
+https://docs.aws.amazon.com/lambda/latest/dg/packaging-layers.html
 
 ## STEP 7
 manually add the API Gateway as trigger.
@@ -48,3 +50,35 @@ Make it a REST API and not an HTTP API
 .Make sure to have the API Proxy option enables and the next option chose the first one that says (recommended)
 
 Also make sure that your endpoint is connected to the desired Lambda.
+
+# Useful commands
+docker build --platform linux/amd64 --build-arg CACHEBUST=$(date +%s) -t skogappteigfilter-image:test .
+
+container_id=$(docker create skogappteigfilter-image:test)docker cp $container_id:/var/task ./skogappteigfilter-lambda-package
+docker rm $container_id
+cd skogappteigfilter-lambda-package
+zip -r9 ../skogappteigfilter-lambda-package.zip .
+cd ..
+
+aws lambda update-function-code --function-name SkogAppTeigFilter --zip-file fileb://zips/skogappteigfilter-lambda-package.zip
+
+aws lambda update-function-code --function-name test2 --zip-file fileb://zips/test2-lambda.zip
+
+Run it interactively to see inside the image:
+docker run --platform linux/amd64 --rm -it -v $(pwd)/code:/var/task skogapp_hkcut /bin/bash
+
+docker build --platform linux/amd64 -t skogapp_hkcut .
+docker run --platform linux/amd64 --name skogapp_hkcut_container skogapp_hkcut
+docker cp skogapp_hkcut_container:/var/task ./package
+docker rm skogapp_hkcut_container
+
+Copied this from : https://github.com/lambgeo/docker-lambda
+docker build --platform linux/amd64 --tag package:latest .
+docker run --name lambda -w /var/task --volume $(pwd):/local -itd package:latest bash
+docker exec -it lambda bash
+python -c "import numpy; print(numpy.__version__)"
+python /var/task/lambda_function.py event.json
+docker cp lambda:/tmp/package.zip package.zip
+docker stop lambda
+docker rm lambda
+
