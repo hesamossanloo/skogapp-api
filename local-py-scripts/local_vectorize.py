@@ -19,9 +19,9 @@ from shapely.ops import transform
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define paths relative to the script's directory
-svg_path = os.path.join(script_dir, "outputs/downloaded_image_SVG_SHP_V3_NO_FIONA.svg")
-new_shp_path = os.path.join(script_dir, "outputs/downloaded_image_SVG_SHP_V3_NO_FIONA.shp")
-output_shp_path = os.path.join(script_dir, "outputs/intersected_image_SVG_SHP_V3_NO_FIONA.shp")
+svg_path = os.path.join(script_dir, "outputs/vectorize/downloaded_image.svg")
+new_shp_path = os.path.join(script_dir, "outputs/vectorize/downloaded_image.shp")
+output_shp_path = os.path.join(script_dir, "outputs/vectorize/intersected_image.shp")
 
 # Create a projection file
 prj_content = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]"""
@@ -205,8 +205,8 @@ def parse_svg_path(path_data):
     
     return coordinates
 
-@app.route('/cut', methods=['POST'])
-def cut():
+@app.route('/vectorize', methods=['POST'])
+def vectorize():
     geojson_dict = request.json
 
     if geojson_dict['type'] != 'FeatureCollection':
