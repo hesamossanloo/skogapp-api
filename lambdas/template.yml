@@ -70,7 +70,7 @@ Resources:
           Type: Api
           Properties:
             RestApiId: !Ref SkogAppApi
-            Path: /filter
+            Path: /find
             Method: POST
       RuntimeManagementConfig:
         UpdateRuntimeOn: Auto
@@ -78,7 +78,7 @@ Resources:
   SkogAppHKCut:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-cut-lambda-big-file/package-v1.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKCut.zip
       Description: 'Cut the Forest SVG and PNG from Nibio HK WMS based on the given GeoJSON'
       FunctionName: SkogAppHKCut
       MemorySize: 128
@@ -122,6 +122,12 @@ Resources:
                 - ec2:AssignPrivateIpAddresses
                 - ec2:UnassignPrivateIpAddresses
               Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:PutObjectAcl
+              Resource: arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKCut/*
       SnapStart:
         ApplyOn: None
       VpcConfig:
@@ -138,7 +144,98 @@ Resources:
             Method: POST
       RuntimeManagementConfig:
         UpdateRuntimeOn: Auto
-
+  
+  SkogAppHKVectorize:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V11.zip
+      Description: 'Vectorize the Forest SVG and SHP from Nibio HK WMS based on the given GeoJSON'
+      FunctionName: SkogAppHKVectorize
+      MemorySize: 128
+      Timeout: 900
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      Architectures:
+        - x86_64
+      EphemeralStorage:
+        Size: 512
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 21600
+        MaximumRetryAttempts: 2
+      Layers:
+        - arn:aws:lambda:eu-north-1:992382379679:layer:shapely:1
+      Environment:
+        Variables:
+          GDAL_DATA: /var/task/share/gdal
+          PROJ_LIB: /var/task/share/proj
+      PackageType: Zip
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+              Resource: arn:aws:logs:eu-north-1:992382379679:*
+            - Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource:
+                - arn:aws:logs:eu-north-1:992382379679:log-group:/aws/lambda/SkogAppHKVectorize:*
+            - Sid: AWSLambdaVPCAccessExecutionPermissions
+              Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+                - ec2:CreateNetworkInterface
+                - ec2:DescribeNetworkInterfaces
+                - ec2:DescribeSubnets
+                - ec2:DeleteNetworkInterface
+                - ec2:AssignPrivateIpAddresses
+                - ec2:UnassignPrivateIpAddresses
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:PutObjectAcl
+                - s3:GetObject
+                - s3:GetObjectAcl
+                - s3:ListBucket
+                - s3:HeadObject
+              Resource: 
+                - arn:aws:s3:::skogapp-lambda-generated-outputs
+                - arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKCut/*  
+                - arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKVectorize/*  
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sqs:ReceiveMessage
+                - sqs:DeleteMessage
+                - sqs:GetQueueAttributes
+              Resource: !GetAtt SkogAppQueue.Arn
+      SnapStart:
+        ApplyOn: None
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt SkogAppSecurityGroup.GroupId
+        SubnetIds:
+          - !Ref SkogAppPrivateSubnet
+      Events:
+        Api1:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SkogAppApi
+            Path: /vectorize
+            Method: POST
+        SqsEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SkogAppQueue.Arn
+            BatchSize: 1
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: Auto
+  
   SkogAppVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -250,6 +347,32 @@ Resources:
         - Key: Name
           Value: SkogAppSecurityGroup
 
+  ApiGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "apigateway.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "ApiGatewaySQSPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "sqs:*"
+                Resource: !GetAtt SkogAppQueue.Arn
+  
+  SkogAppQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: SkogAppQueue
+      VisibilityTimeout: 900  # Set visibility timeout to match or exceed Lambda function timeout
+      
   SkogAppApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -260,3 +383,56 @@ Resources:
         AllowMethods: "'POST,OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
         AllowOrigin: "'*'"
+      DefinitionBody:
+        swagger: "2.0"
+        info:
+          title: "SkogApp API"
+        paths:
+          /sendToQueue:
+            post:
+              consumes:
+                - "application/json"
+              produces:
+                - "application/json"
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:sqs:path/992382379679/SkogAppQueue"
+                httpMethod: POST
+                type: aws
+                credentials: !GetAtt ApiGatewayRole.Arn
+                contentHandling: CONVERT_TO_TEXT
+                passthroughBehavior: WHEN_NO_TEMPLATES
+                responses:
+                  default:
+                    statusCode: "200"
+                requestParameters:
+                  integration.request.header.Content-Type: "'application/x-www-form-urlencoded'"
+                requestTemplates:
+                  application/json: |
+                    Action=SendMessage&MessageBody=$util.urlEncode($input.body)
+          definitions:
+            Empty:
+              type: object
+              title: Empty
+          /find:
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SkogAppTeigFilter.Arn}/invocations"
+                httpMethod: POST
+                type: aws_proxy
+          /cut:
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SkogAppHKCut.Arn}/invocations"
+                httpMethod: POST
+                type: aws_proxy
+          /vectorize:
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SkogAppHKVectorize.Arn}/invocations"
+                httpMethod: POST
+                type: aws_proxy

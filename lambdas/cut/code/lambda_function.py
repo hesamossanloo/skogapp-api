@@ -2,20 +2,30 @@ import json
 from osgeo import gdal, ogr
 from urllib.parse import urlencode
 import requests
+import boto3
 
-# Function to calculate bounds of a MultiPolygon
+s3 = boto3.client('s3')
+bucket_name = 'skogapp-lambda-generated-outputs'  # Replace with your bucket name
+s3_folder = 'SkogAppHKCut/'  # S3 folder
+
 def calculate_bounds(multipolygon):
     envelope = multipolygon.GetEnvelope()  # Returns a tuple (minX, maxX, minY, maxY)
     return envelope
 
-def cut(event, context):
+def cut(event):
     geojson_dict = json.loads(event['body'])
     
-    # Initialize variables for combined bounds
     min_x, min_y = float('inf'), float('inf')
     max_x, max_y = float('-inf'), float('-inf')
+    forestID = geojson_dict.get('forestID')
     
-    # Check if the GeoJSON data is a FeatureCollection
+    if not forestID:
+        response = {
+            'statusCode': 400,
+            'body': json.dumps({'message': 'Missing forestID'})
+        }
+        return add_cors_headers(response)
+    
     if geojson_dict['type'] == 'FeatureCollection':
         for feature in geojson_dict['features']:
             geometry_json = json.dumps(feature['geometry'])
@@ -39,9 +49,11 @@ def cut(event, context):
             'body': json.dumps({'message': 'Invalid GeoJSON data. Must be a FeatureCollection.'})
         }
         return add_cors_headers(response)
-            
+    
     base_URL = "https://wms.nibio.no/cgi-bin/skogbruksplan?"
-    WMS_params = {
+    
+    # Download TIF
+    WMS_TIF_params = {
         "LANGUAGE": "nor",
         "SERVICE": "WMS",
         "VERSION": "1.3.0",
@@ -57,21 +69,21 @@ def cut(event, context):
         "FORMAT_OPTIONS": "dpi:144",
         "TRANSPARENT": "TRUE"
     }
-    WMS_params['BBOX'] = combined_bounds_STR
-    encoded_params = urlencode(WMS_params, safe=',:')
-    WMS_URL = base_URL + encoded_params
+    WMS_TIF_params['BBOX'] = combined_bounds_STR
+    encoded_params_tif = urlencode(WMS_TIF_params, safe=',:')
+    WMS_URL_TIF = base_URL + encoded_params_tif
     
-    downloaded_path = "/tmp/downloaded_image.tif"
-    output_path = "/tmp/cut_image.png"
+    downloaded_tif_path = "/tmp/downloaded_image.tif"
+    output_png_path = "/tmp/cut_image.png"
 
-    WMS_response = requests.get(WMS_URL, timeout=(10, 30))
-    if WMS_response.status_code == 200:
-        with open(downloaded_path, 'wb') as file:
-            file.write(WMS_response.content)
+    WMS_response_tif = requests.get(WMS_URL_TIF, timeout=(10, 30))
+    if WMS_response_tif.status_code == 200:
+        with open(downloaded_tif_path, 'wb') as file:
+            file.write(WMS_response_tif.content)
     else:
         response = {
-            'statusCode': WMS_response.status_code,
-            'body': json.dumps({'message': 'Failed to download image.'})
+            'statusCode': WMS_response_tif.status_code,
+            'body': json.dumps({'message': 'Failed to download TIF image.'})
         }
         return add_cors_headers(response)
     
@@ -81,23 +93,62 @@ def cut(event, context):
         geojson_vsimem_path = '/vsimem/temp_geojson.json'
         gdal.FileFromMemBuffer(geojson_vsimem_path, geojson_STR)
         
-        result = gdal.Warp(output_path, downloaded_path, format='PNG', dstNodata=0, outputBounds=[min_x, min_y, max_x, max_y], cutlineDSName=geojson_vsimem_path, cropToCutline=True)
+        result = gdal.Warp(output_png_path, downloaded_tif_path, format='PNG', dstNodata=0, outputBounds=[min_x, min_y, max_x, max_y], cutlineDSName=geojson_vsimem_path, cropToCutline=True)
         
         if not result:
             raise Exception("GDAL Warp operation failed.")
     
         gdal.Unlink(geojson_vsimem_path)
-        WMS_response = {
-            'statusCode': 200,
-            'body': json.dumps({'message': 'Image processing completed successfully.', 'output_path': output_path})
-        }
-        return add_cors_headers(WMS_response)
+        
+        # Upload the processed PNG image to S3
+        s3_key_png = f"{s3_folder}{forestID}_HK_image_cut.png"
+        s3.upload_file(output_png_path, bucket_name, s3_key_png)
+        
+        s3_url_png = f"https://{bucket_name}.s3.amazonaws.com/{s3_key_png}"
     except Exception as e:
-        WMS_response = {
+        response = {
             'statusCode': 500,
-            'body': json.dumps({'message': 'Image processing failed.', 'error': str(e)})
+            'body': json.dumps({'message': 'PNG image processing failed.', 'error': str(e)})
         }
-        return add_cors_headers(WMS_response)
+        return add_cors_headers(response)
+
+    # Download SVG
+    WMS_SVG_params = WMS_TIF_params.copy()
+    WMS_SVG_params["FORMAT"] = "image/svg+xml"
+    encoded_params_svg = urlencode(WMS_SVG_params, safe=',:')
+    WMS_URL_SVG = base_URL + encoded_params_svg
+    
+    downloaded_svg_path = "/tmp/downloaded_image.svg"
+
+    WMS_response_svg = requests.get(WMS_URL_SVG, timeout=(10, 30))
+    if WMS_response_svg.status_code == 200:
+        with open(downloaded_svg_path, 'wb') as file:
+            file.write(WMS_response_svg.content)
+    else:
+        response = {
+            'statusCode': WMS_response_svg.status_code,
+            'body': json.dumps({'message': 'Failed to download SVG image.'})
+        }
+        return add_cors_headers(response)
+
+    # Upload the SVG file to S3
+    try:
+        s3_key_svg = f"{s3_folder}{forestID}_HK_image_cut.svg"
+        s3.upload_file(downloaded_svg_path, bucket_name, s3_key_svg)
+        
+        s3_url_svg = f"https://{bucket_name}.s3.amazonaws.com/{s3_key_svg}"
+        
+        response = {
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Image processing completed successfully.', 's3_url_png': s3_url_png, 's3_url_svg': s3_url_svg})
+        }
+        return add_cors_headers(response)
+    except Exception as e:
+        response = {
+            'statusCode': 500,
+            'body': json.dumps({'message': 'SVG upload failed.', 'error': str(e)})
+        }
+        return add_cors_headers(response)
 
 def add_cors_headers(response):
     response['headers'] = {
@@ -115,7 +166,7 @@ def lambda_handler(event, context):
         }
         return add_cors_headers(response)
     elif event['httpMethod'] == 'POST':
-        return cut(event, context)
+        return cut(event)
     else:
         response = {
             'statusCode': 405,
