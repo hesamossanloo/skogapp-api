@@ -5,7 +5,7 @@ Resources:
   SkogAppTeigFilter:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-sam-lambda-deployments/08042437b1b0d113fbf63cfbf2fa750d
+      CodeUri: SkogAppTeigFilter
       Description: Find the Forest GeoJSON based on given Kommunenummer and Matrikkelnummer
       FunctionName: SkogAppTeigFilter
       MemorySize: 128
@@ -153,8 +153,6 @@ Resources:
             Method: POST
       RuntimeManagementConfig:
         UpdateRuntimeOn: Auto
-    Metadata:
-      SamResourceId: SkogAppHKCut
   SkogAppHKVectorize:
     Type: AWS::Serverless::Function
     Properties:
@@ -255,8 +253,6 @@ Resources:
             BatchSize: 1
       RuntimeManagementConfig:
         UpdateRuntimeOn: Auto
-    Metadata:
-      SamResourceId: SkogAppHKVectorize
   SkogAppVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -264,8 +260,6 @@ Resources:
       Tags:
       - Key: Name
         Value: SkogAppVPC
-    Metadata:
-      SamResourceId: SkogAppVPC
   SkogAppPublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
@@ -276,8 +270,6 @@ Resources:
       Tags:
       - Key: Name
         Value: SkogAppPublicSubnet
-    Metadata:
-      SamResourceId: SkogAppPublicSubnet
   SkogAppPrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
@@ -287,16 +279,12 @@ Resources:
       Tags:
       - Key: Name
         Value: SkogAppPrivateSubnet
-    Metadata:
-      SamResourceId: SkogAppPrivateSubnet
   SkogAppInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
       - Key: Name
         Value: SkogAppInternetGateway
-    Metadata:
-      SamResourceId: SkogAppInternetGateway
   SkogAppAttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
@@ -304,8 +292,6 @@ Resources:
         Ref: SkogAppVPC
       InternetGatewayId:
         Ref: SkogAppInternetGateway
-    Metadata:
-      SamResourceId: SkogAppAttachGateway
   SkogAppPublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -314,8 +300,6 @@ Resources:
       Tags:
       - Key: Name
         Value: SkogAppPublicRouteTable
-    Metadata:
-      SamResourceId: SkogAppPublicRouteTable
   SkogAppPublicRoute:
     Type: AWS::EC2::Route
     Properties:
@@ -324,8 +308,6 @@ Resources:
       DestinationCidrBlock: '0.0.0.0/0'
       GatewayId:
         Ref: SkogAppInternetGateway
-    Metadata:
-      SamResourceId: SkogAppPublicRoute
   SkogAppNatGateway:
     Type: AWS::EC2::NatGateway
     Properties:
@@ -338,14 +320,10 @@ Resources:
       Tags:
       - Key: Name
         Value: SkogAppNatGateway
-    Metadata:
-      SamResourceId: SkogAppNatGateway
   SkogAppEIP:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
-    Metadata:
-      SamResourceId: SkogAppEIP
   SkogAppPrivateRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -354,8 +332,6 @@ Resources:
       Tags:
       - Key: Name
         Value: SkogAppPrivateRouteTable
-    Metadata:
-      SamResourceId: SkogAppPrivateRouteTable
   SkogAppPrivateRoute:
     Type: AWS::EC2::Route
     Properties:
@@ -364,8 +340,6 @@ Resources:
       DestinationCidrBlock: '0.0.0.0/0'
       NatGatewayId:
         Ref: SkogAppNatGateway
-    Metadata:
-      SamResourceId: SkogAppPrivateRoute
   SkogAppPublicSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -373,8 +347,6 @@ Resources:
         Ref: SkogAppPublicSubnet
       RouteTableId:
         Ref: SkogAppPublicRouteTable
-    Metadata:
-      SamResourceId: SkogAppPublicSubnetRouteTableAssociation
   SkogAppPrivateSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -382,8 +354,6 @@ Resources:
         Ref: SkogAppPrivateSubnet
       RouteTableId:
         Ref: SkogAppPrivateRouteTable
-    Metadata:
-      SamResourceId: SkogAppPrivateSubnetRouteTableAssociation
   SkogAppSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -399,8 +369,6 @@ Resources:
       Tags:
       - Key: Name
         Value: SkogAppSecurityGroup
-    Metadata:
-      SamResourceId: SkogAppSecurityGroup
   ApiGatewayRole:
     Type: AWS::IAM::Role
     Properties:
@@ -423,15 +391,11 @@ Resources:
               Fn::GetAtt:
               - SkogAppQueue
               - Arn
-    Metadata:
-      SamResourceId: ApiGatewayRole
   SkogAppQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: SkogAppQueue
       VisibilityTimeout: 900
-    Metadata:
-      SamResourceId: SkogAppQueue
   SkogAppApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -503,5 +467,3 @@ Resources:
                   Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SkogAppHKVectorize.Arn}/invocations
                 httpMethod: POST
                 type: aws_proxy
-    Metadata:
-      SamResourceId: SkogAppApi

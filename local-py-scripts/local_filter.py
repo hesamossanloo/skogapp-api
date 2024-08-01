@@ -81,7 +81,7 @@ def filter_features():
     elapsed_time_akerhus = end_time_akerhus - start_time_akerhus
 
     response = {
-        'filtered_features': json.dumps(transformed_features),
+        'forest_geojson': json.dumps(transformed_features),
         'elapsed_time_to_prep_geojson': elapsed_time_akerhus,
     }
     return jsonify(response)
