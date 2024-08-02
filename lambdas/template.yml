@@ -3,12 +3,12 @@ Transform: AWS::Serverless-2016-10-31
 Description: SkogApp SAM Template for AWS Lambda and API Gateway
 
 Resources:
-  SkogAppTeigFilter:
+  SkogAppTeigFinder:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: filter/code
+      CodeUri: find/code
       Description: 'Find the Forest GeoJSON based on given Kommunenummer and Matrikkelnummer'
-      FunctionName: SkogAppTeigFilter
+      FunctionName: SkogAppTeigFinder
       MemorySize: 128
       Timeout: 5
       Handler: lambda_function.lambda_handler
@@ -41,7 +41,7 @@ Resources:
                 - logs:CreateLogStream
                 - logs:PutLogEvents
               Resource:
-                - arn:aws:logs:eu-north-1:992382379679:log-group:/aws/lambda/SkogAppTeigFilter:*
+                - arn:aws:logs:eu-north-1:992382379679:log-group:/aws/lambda/SkogAppTeigFinder:*
             - Sid: AWSLambdaVPCAccessExecutionPermissions
               Effect: Allow
               Action:
@@ -421,7 +421,7 @@ Resources:
           /find:
             post:
               x-amazon-apigateway-integration:
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SkogAppTeigFilter.Arn}/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SkogAppTeigFinder.Arn}/invocations"
                 httpMethod: POST
                 type: aws_proxy
           /cut:

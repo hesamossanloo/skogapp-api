@@ -19,9 +19,9 @@ from shapely.ops import transform
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define paths relative to the script's directory
-svg_path = os.path.join(script_dir, "outputs/vectorize/downloaded_image.svg")
-new_shp_path = os.path.join(script_dir, "outputs/vectorize/downloaded_image.shp")
-output_shp_path = os.path.join(script_dir, "outputs/vectorize/intersected_image.shp")
+downloaded_svg_from_cut_path = os.path.join(script_dir, "outputs/vectorize/downloaded_image.svg")
+shp_from_svg_cut_path = os.path.join(script_dir, "outputs/vectorize/downloaded_image.shp")
+save_intersected_geojson_shp_path = os.path.join(script_dir, "outputs/vectorize/intersected_image.shp")
 
 # Create a projection file
 prj_content = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]"""
@@ -43,8 +43,32 @@ def normalize_polygon(coords, precision=6):
     
     # Round the coordinates for precision
     rounded_coords = [(round(x, precision), round(y, precision)) for x, y in oriented.exterior.coords]
-    
     return rounded_coords
+
+def parse_gml(gml_text):
+    root = ET.fromstring(gml_text)
+    ns = {'gml': 'http://www.opengis.net/gml'}
+    feature = root.find('.//hogstklasser_feature')
+    if feature is None:
+        return {}
+
+    attributes = {
+        'leveranseid': feature.findtext('leveranseid', default='', namespaces=ns),
+        'prosjekt': feature.findtext('prosjekt', default='', namespaces=ns),
+        'kommune': feature.findtext('kommune', default='', namespaces=ns),
+        'hogstkl_verdi': feature.findtext('hogstkl_verdi', default='', namespaces=ns),
+        'bonitet_beskrivelse': feature.findtext('bonitet_beskrivelse', default='', namespaces=ns),
+        'bontre_beskrivelse': feature.findtext('bontre_beskrivelse', default='', namespaces=ns),
+        'areal': feature.findtext('areal', default='', namespaces=ns),
+        'arealm2': feature.findtext('arealm2', default='', namespaces=ns),
+        'alder': feature.findtext('alder', default='', namespaces=ns),
+        'alder_korr': feature.findtext('alder_korr', default='', namespaces=ns),
+        'regaar_korr': feature.findtext('regaar_korr', default='', namespaces=ns),
+        'regdato': feature.findtext('regdato', default='', namespaces=ns),
+        'sl_sdeid': feature.findtext('sl_sdeid', default='', namespaces=ns),
+        'teig_best_nr': feature.findtext('teig_best_nr', default='', namespaces=ns),
+    }
+    return attributes
 
 def svg_to_shp(svg_path, shp_path, bbox, image_size, tolerance=6):
     try:
@@ -58,7 +82,7 @@ def svg_to_shp(svg_path, shp_path, bbox, image_size, tolerance=6):
             shp.field('bestand_id', 'N')
 
             processed_polygons = set()
-
+            
             for i, element in enumerate(root.findall('.//svg:path', namespaces)):
                 d = element.attrib.get('d', '')
                 if d:
@@ -73,12 +97,12 @@ def svg_to_shp(svg_path, shp_path, bbox, image_size, tolerance=6):
                         # Define the polygon
                         polygon = [geo_coords]
                         shp.poly(polygon)
+
+                        # Add a corresponding record
                         shp.record(i)
 
                         # Add the polygon to the set of processed polygons
                         processed_polygons.add(polygon_tuple)
-                    else:
-                        print(f"Duplicate polygon detected and skipped at index {i}")
 
         with open(f"{shp_path.replace('.shp', '.prj')}", 'w') as prj:
             prj.write(prj_content)
@@ -86,8 +110,29 @@ def svg_to_shp(svg_path, shp_path, bbox, image_size, tolerance=6):
         print(f"Shapefile created at {shp_path}")
     except Exception as e:
         print(f"Error converting SVG to SHP: {str(e)}")
-        
-def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapefile):
+
+def fetch_wms_info(wms_url, params):
+    try:
+        url = f"{wms_url}?{urlencode(params)}"
+        response = requests.get(url)
+        return response.text.strip()
+    except Exception as e:
+        print(f"Error fetching WMS info: {str(e)}")
+        return ''
+def calculate_pixel_coordinates(bbox, width, height, point):
+    minx, miny, maxx, maxy = bbox
+    x, y = point.x, point.y
+    pixel_x = int((x - minx) / (maxx - minx) * width)
+    pixel_y = int((y - miny) / (maxy - miny) * height)
+    return pixel_x, pixel_y
+
+
+
+def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapefile, map_extent_bbox, wms_url="https://wms.nibio.no/cgi-bin/skogbruksplan"):
+    # min_x, min_y, max_x, max_y = map_extent_bbox
+    # width = 1024  # Replace with actual width from WMS_params
+    # height = 1024  # Replace with actual height from WMS_params
+    
     try:
         with shapefile.Reader(shapefile_path) as shapefile_src:
             fields = shapefile_src.fields[1:]  # Skip the DeletionFlag field
@@ -95,6 +140,9 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
 
             with shapefile.Writer(output_shapefile) as output:
                 output.fields = fields
+                # for attr_name in ['leveranseid', 'prosjekt', 'kommune', 'hogstkl_verdi', 'bonitet_beskrivelse', 'bontre_beskrivelse', 'areal', 'arealm2', 'alder', 'alder_korr', 'regaar_korr', 'regdato', 'sl_sdeid', 'teig_best_nr']:
+                #     output.field(attr_name, 'C')
+
                 for shape_rec in shapefile_src.shapeRecords():
                     try:
                         shape_geom = shape(shape_rec.shape.__geo_interface__)
@@ -102,7 +150,6 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
                         
                         # Ensure the geometry is a valid Polygon or MultiPolygon
                         if not isinstance(shape_geom, (Polygon, MultiPolygon)):
-                            # print(f"Skipping invalid geometry: {shape_geom}")
                             continue
 
                         for geojson_feat in geojson_dict['features']:
@@ -118,7 +165,34 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
                                 intersection = shape_geom.intersection(geojson_geom)
                                 if intersection.is_empty:
                                     continue
+                                
+                                # # Calculate the centroid of the intersection
+                                # centroid = intersection.centroid
+                                # pixel_x, pixel_y = calculate_pixel_coordinates(map_extent_bbox, width, height, centroid)
+                                
+                                # # Fetch WMS info for the intersected polygon
+                                # wms_params = {
+                                #     'SERVICE': 'WMS',
+                                #     'VERSION': '1.3.0',
+                                #     'REQUEST': 'GetFeatureInfo',
+                                #     'LAYERS': 'hogstklasser',
+                                #     'QUERY_LAYERS': 'hogstklasser',
+                                #     'BBOX': f"{min_y},{min_x},{max_y},{max_x}",
+                                #     'WIDTH': width,
+                                #     'HEIGHT': height,
+                                #     'INFO_FORMAT': 'application/vnd.ogc.gml',
+                                #     'I': pixel_x,
+                                #     'J': pixel_y,
+                                #     'CRS': 'EPSG:4326'
+                                # }
+                                # wms_info = fetch_wms_info(wms_url, wms_params)
+                                # wms_attributes = parse_gml(wms_info)
+                                
                                 # Write the intersected part to the output shapefile
+                                # record = shape_rec.record.as_dict()
+                                # record['featureInfos'] = wms_attributes
+                                # record['featureInfos']['bestand_id'] = shape_rec.record['bestand_id']
+                                # output.record(**record)
                                 output.shape(intersection.__geo_interface__)
                                 output.record(*[shape_rec.record[field] for field in field_names])
                     except Exception as e:
@@ -133,7 +207,7 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
     print(f"Projection file saved at {prj_path}")
                         
 # Function to calculate bounds of a MultiPolygon
-def calculate_bounds(multipolygon):
+def calculate_map_extent_bounds(multipolygon):
     envelope = multipolygon.GetEnvelope()  # Returns a tuple (minX, maxX, minY, maxY)
     return envelope
 
@@ -205,8 +279,9 @@ def parse_svg_path(path_data):
     
     return coordinates
 
-@app.route('/vectorize', methods=['POST'])
-def vectorize():
+@app.route('/vectorizeAndGetInfo', methods=['POST'])
+def vectorizeAndGetInfo():
+    onlyIntersect = request.args.get('onlyIntersect')
     geojson_dict = request.json
 
     if geojson_dict['type'] != 'FeatureCollection':
@@ -242,7 +317,7 @@ def vectorize():
             print("Failed to create geometry from GeoJSON.")
             return jsonify({'message': 'Failed to create geometry from GeoJSON.'})
         
-        bounds = calculate_bounds(ogr_geom)
+        bounds = calculate_map_extent_bounds(ogr_geom)
         print(f"Bounds: {bounds}")
         
         min_x, max_x = min(min_x, bounds[0]), max(max_x, bounds[1])
@@ -258,20 +333,21 @@ def vectorize():
     print(f"Current Working Directory: {os.getcwd()}")
     response = requests.get(WMS_URL)
     if response.status_code == 200:
-        with open(svg_path, 'wb') as file:
+        with open(downloaded_svg_from_cut_path, 'wb') as file:
             file.write(response.content)
     else:
         print(f"Failed to download image. Status code: {response.status_code}")
         return jsonify({'message': 'Failed to download image.', 'status_code': response.status_code})
 
     try:
-        svg_to_shp(svg_path, new_shp_path, [min_x, min_y, max_x, max_y], (1024, 1024))
+        if onlyIntersect != 'true':
+            svg_to_shp(downloaded_svg_from_cut_path, shp_from_svg_cut_path, [min_x, min_y, max_x, max_y], (1024, 1024))
 
-        # Perform intersection directly with GeoJSON
-        intersect_shapefile_with_geojson(new_shp_path, geojson_dict, output_shp_path)
+        # Perform intersection di   rectly with GeoJSON
+        intersect_shapefile_with_geojson(shp_from_svg_cut_path, geojson_dict, save_intersected_geojson_shp_path, [min_x, min_y, max_x, max_y])
 
-        print(f"Intersection shapefile saved at {output_shp_path}")
-        return jsonify({'message': 'SVG processing and intersection completed successfully.', 'output_path': output_shp_path})
+        print(f"Intersection shapefile saved at {save_intersected_geojson_shp_path}")
+        return jsonify({'message': 'SVG processing and intersection completed successfully.', 'output_path': save_intersected_geojson_shp_path})
     except Exception as e:
         print(f"Error during SVG processing: {str(e)}")
         return jsonify({'message': 'SVG processing failed.', 'error': str(e)})
