@@ -1,45 +1,65 @@
-import shapefile
-from osgeo import osr
-import os
-from flask import Flask, request, jsonify
-import json
-import xml.etree.ElementTree as ET
-from osgeo import ogr, gdal, osr
-from urllib.parse import urlencode
-import requests
-import re
+min_x, min_y, max_x, max_y = map_extent_bbox
+width = 1024  # Replace with actual width from WMS_params
+height = 1024  # Replace with actual height from WMS_params
 
-def svg_to_shp(svg_path, shp_path, bbox, image_size):
-    try:
-        # Parse the SVG file
-        tree = ET.parse(svg_path)
-        root = tree.getroot()
-        namespaces = {'svg': 'http://www.w3.org/2000/svg'}
+try:
+    with shapefile.Reader(shapefile_path) as shapefile_src:
+        fields = shapefile_src.fields[1:]  # Skip the DeletionFlag field
+        field_names = [field[0] for field in fields]
 
-        # Create a new shapefile
-        with shapefile.Writer(shp_path, shapefile.POLYGON) as shp:
-            shp.field('ID', 'N')
+        with shapefile.Writer(output_shapefile) as output:
+            output.fields = fields
+            for attr_name in ['leveranseid', 'prosjekt', 'kommune', 'hogstkl_verdi', 'bonitet_beskrivelse', 'bontre_beskrivelse', 'areal', 'arealm2', 'alder', 'alder_korr', 'regaar_korr', 'regdato', 'sl_sdeid', 'teig_best_nr']:
+                output.field(attr_name, 'C')
 
-            for element in root.findall('.//svg:path', namespaces):
-                d = element.attrib.get('d', '')
-                if d:
-                    coordinates = parse_svg_path(d)
-                    geo_coords = pixel_to_geo(coordinates, bbox, image_size)
+            for shape_rec in shapefile_src.shapeRecords():
+                try:
+                    shape_geom = shape(shape_rec.shape.__geo_interface__)
+                    shape_geom = make_valid(shape_geom)  # Fix invalid geometry
+                    
+                    # Ensure the geometry is a valid Polygon or MultiPolygon
+                    if not isinstance(shape_geom, (Polygon, MultiPolygon)):
+                        continue
 
-                    # Define the polygon
-                    polygon = [geo_coords]
-                    shp.poly(polygon)
-                    shp.record(1)
+                    for geojson_feat in geojson_dict['features']:
+                        geojson_geom = shape(geojson_feat['geometry'])
+                        geojson_geom = make_valid(geojson_geom)  # Fix invalid geometry
+                        
+                        # Ensure the GeoJSON geometry is a valid Polygon or MultiPolygon
+                        if not isinstance(geojson_geom, (Polygon, MultiPolygon)):
+                            # print(f"Skipping invalid GeoJSON geometry: {geojson_geom}")
+                            continue
 
-        # Create a projection file
-        prj_content = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]"""
-        with open(f"{shp_path.replace('.shp', '.prj')}", 'w') as prj:
-            prj.write(prj_content)
-
-        print(f"Shapefile created at {shp_path}")
-    except Exception as e:
-        print(f"Error converting SVG to SHP: {str(e)}")
-
-new_svg_path = "outputs/extracted_features_V2.svg"
-new_shp_path = "outputs/extracted_features_V2.shp"
-svg_to_shp(new_svg_path, new_shp_path, [min_x, min_y, max_x, max_y], (1024, 1024))
+                        if shape_geom.intersects(geojson_geom):
+                            intersection = shape_geom.intersection(geojson_geom)
+                            if intersection.is_empty:
+                                continue
+                            
+                            # Calculate the centroid of the intersection
+                            centroid = intersection.centroid
+                            pixel_x, pixel_y = calculate_pixel_coordinates(map_extent_bbox, width, height, centroid)
+                            
+                            # Fetch WMS info for the intersected polygon
+                            wms_params = {
+                                'SERVICE': 'WMS',
+                                'VERSION': '1.3.0',
+                                'REQUEST': 'GetFeatureInfo',
+                                'LAYERS': 'hogstklasser',
+                                'QUERY_LAYERS': 'hogstklasser',
+                                'BBOX': f"{min_y},{min_x},{max_y},{max_x}",
+                                'WIDTH': width,
+                                'HEIGHT': height,
+                                'INFO_FORMAT': 'application/vnd.ogc.gml',
+                                'I': pixel_x,
+                                'J': pixel_y,
+                                'CRS': 'EPSG:4326'
+                            }
+                            wms_info = fetch_wms_info(wms_url, wms_params)
+                            wms_attributes = parse_gml(wms_info)
+                            
+                            # Write the intersected part to the output shapefile
+                            record = shape_rec.record.as_dict()
+                            record['featureInfos'] = wms_attributes
+                            record['featureInfos']['bestand_id'] = shape_rec.record['bestand_id']
+                            output.record(**record)
+                            output.shape(intersection.__geo_interface__)
