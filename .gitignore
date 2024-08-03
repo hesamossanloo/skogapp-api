@@ -15,3 +15,6 @@ terraform.tfstate.backup
 zips
 lambda-layers
 skogappteigfilter-lambda-package
+lambdas/packaged.yaml
+
+.aws-sam

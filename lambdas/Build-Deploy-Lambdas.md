@@ -40,8 +40,10 @@ sam local invoke SkogAppTeigFilter -e tests/lambda/events/local_test_event.json
 ```
 
 
+docker build --platform linux/amd64 --tag skogapp-featureinfo:latest .
 docker build --platform linux/amd64 --tag skogapp-vectorize:latest .
 docker build --platform linux/amd64 --tag skogapp-cut:latest .
+docker run --platform linux/amd64 --name lambda skogapp-featureinfo:latest
 docker run --name lambda -w /var/task --volume $(pwd):/local -itd skogapp-vectorize:latest bash
 docker run --name lambda -w /var/task --volume $(pwd):/local -itd skogapp-cut:latest bash
 docker exec -it lambda bash
@@ -50,8 +52,10 @@ python -c "from osgeo import gdal; print(gdal.__version__)"
 python -c "import xml.etree.ElementTree as ET"
 python -c "from urllib.parse import urlencode"
 python -c "import shapefile; import re; from shapely.geometry import shape, mapping"
+python -c "import shapefile; import requests"
 python /var/task/lambda_function.py event.json
-docker cp lambda:/tmp/package.zip SkogAppHKCut.zip
+docker cp lambda:/tmp/package.zip SkogAppHKFeatureInfo-V1.zip
+docker cp lambda:/tmp/package.zip SkogAppHKCut-V1.zip
 docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V6.zip
 docker stop lambda
 docker rm lambda
