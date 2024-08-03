@@ -6,6 +6,7 @@ from shapely.geometry import shape
 from shapely.validation import make_valid
 from shapely.ops import transform
 import pyproj
+from botocore.exceptions import ClientError
 
 # Initialize the S3 client
 s3_client = boto3.client('s3')
@@ -58,8 +59,12 @@ def parse_xml_response(response_text):
 
 def lambda_handler(event, context):
     # Get the object key from the S3 event
+    #  print the event records with a text saying that
+    print(f"Received event records: {event['Records']}")
     for record in event['Records']:
+        print(f"Processing record: {record}")
         s3_object_key = record['s3']['object']['key']
+        print(f"Processing object key: {s3_object_key}")
         if s3_folder_vectorize not in s3_object_key:
             return
         # the first prefix before the underscrore is the forestID
@@ -68,8 +73,15 @@ def lambda_handler(event, context):
         if not forestID:
             print('No valid forestID found in the event.')
             return
-        
-        
+
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=f"{s3_object_key}.shp")
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                print(f"Object {s3_object_key}.shp does not exist.")
+                continue
+            else:
+                raise
         
         # Download the shapefile components from S3
         s3_client.download_file(bucket_name, f"{s3_object_key}.shp", local_shp_path)

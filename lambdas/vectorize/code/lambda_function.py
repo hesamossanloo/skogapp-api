@@ -98,9 +98,9 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
             with shapefile.Writer(output_shapefile) as output:
                 print(f"Trying to write the intersection to: {output_shapefile}")
                 output.fields = fields
+                print("Processing shape records...")
                 for shape_rec in shapefile_src.shapeRecords():
                     try:
-                        print(f"Processing shape record: {shape_rec.record}")
                         shape_geom = shape(shape_rec.shape.__geo_interface__)
                         shape_geom = make_valid(shape_geom)  # Fix invalid geometry
                         
@@ -219,7 +219,6 @@ def vectorize(geojson_dict, forestID):
             return add_cors_headers(response)
         
         bounds = calculate_bounds(ogr_geom)
-        print(f"Bounds: {bounds}")
         
         min_x, max_x = min(min_x, bounds[0]), max(max_x, bounds[1])
         min_y, max_y = min(min_y, bounds[2]), max(max_y, bounds[3])
@@ -313,7 +312,7 @@ def handle_sqs_event(event):
     for record in event['Records']:
         # Process each SQS message here
         message_body = record['body']
-        print(f"Processing SQS message: {message_body}")
+        print(f"Processing SQS message")
         geojson_dict = json.loads(message_body)
         forestID = geojson_dict.get('forestID')
         
