@@ -196,4 +196,4 @@ def lambda_handler(event, context):
 
         print('Feature info request successful and shapefile updated.')
 
-    print('No valid file found in the event.')
+    print('No more valid file found in the event.')
