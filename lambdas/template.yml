@@ -220,7 +220,7 @@ Resources:
   SkogAppHKCut:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKCut.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKCut-V2.zip
       Description: 'Cut the Forest SVG and PNG from Nibio HK WMS based on the given GeoJSON'
       FunctionName: SkogAppHKCut
       MemorySize: 128
@@ -290,7 +290,7 @@ Resources:
   SkogAppHKVectorize:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V11.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V12.zip
       Description: 'Vectorize the Forest SVG and SHP from Nibio HK WMS based on the given GeoJSON'
       FunctionName: SkogAppHKVectorize
       MemorySize: 128
@@ -381,11 +381,11 @@ Resources:
   SkogAppHKFeatureInfo:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureInfo-V3.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureInfo-V4.zip
       Description: 'Get the Feature Info from Nibio HK WMS based on the created SHP file on S3'
       Handler: lambda_function.lambda_handler
       FunctionName: SkogAppHKFeatureInfo
-      MemorySize: 128
+      MemorySize: 512
       Timeout: 900
       Runtime: python3.11
       Architectures:
