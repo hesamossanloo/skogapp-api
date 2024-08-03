@@ -63,31 +63,41 @@ def lambda_handler(event, context):
     print(f"Received event records: {event['Records']}")
     for record in event['Records']:
         print(f"Processing record: {record}")
-        s3_object_key = record['s3']['object']['key']
-        print(f"Processing object key: {s3_object_key}")
-        if s3_folder_vectorize not in s3_object_key:
-            return
+        S3_object_key = record['s3']['object']['key']
+        print(f"Processing object key: {S3_object_key}")
+        # the issue is that the s3_object_key looks like this: Object SkogAppHKVectorize/Knut123XY_vectorized_HK.shp
+        # I want it to look llike this Knut123XY_vectorized_HK.shp
+        # so I will split the string and get the first element
+        received_S3_folder_name = S3_object_key.split('/')[0]
+        print(f"Processing received S3 folder name: {received_S3_folder_name}")
+        # I also need to get rid of the .shp extension
+        received_S3_file_name = S3_object_key.split('/')[-1]
+        forest_file_name_no_ext = received_S3_file_name.split('.')[0]
+        print(f"Processing forest file name: {forest_file_name_no_ext}")
+
         # the first prefix before the underscrore is the forestID
-        forestID = s3_object_key.split('_')[0]
+        forestID = forest_file_name_no_ext.split('_')[0]
         # if forestID is not found, the function will not proceed
         if not forestID:
             print('No valid forestID found in the event.')
             return
-
+        print(f"Processing forestID: {forestID}")
+        
         try:
-            s3_client.head_object(Bucket=bucket_name, Key=f"{s3_object_key}.shp")
+            s3_client.head_object(Bucket=bucket_name, Key=f"{S3_object_key}")
         except ClientError as e:
             if e.response['Error']['Code'] == '404':
-                print(f"Object {s3_object_key}.shp does not exist.")
+                print(f"Object {S3_object_key} does not exist.")
                 continue
             else:
                 raise
         
         # Download the shapefile components from S3
-        s3_client.download_file(bucket_name, f"{s3_object_key}.shp", local_shp_path)
-        s3_client.download_file(bucket_name, f"{s3_object_key}.shx", local_shx_path)
-        s3_client.download_file(bucket_name, f"{s3_object_key}.dbf", local_dbf_path)
-        s3_client.download_file(bucket_name, f"{s3_object_key}.prj", local_prj_path)
+        print("Downloading shapefile components from S3...", f"{received_S3_folder_name}/{forest_file_name_no_ext}.shp/shx/dbf/prj")
+        s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.shp", local_shp_path)
+        s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.shx", local_shx_path)
+        s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.dbf", local_dbf_path)
+        s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.prj", local_prj_path)
 
         # Read the shapefile
         sf = shapefile.Reader(local_shp_path)
@@ -169,6 +179,14 @@ def lambda_handler(event, context):
 
         writer.close()
 
+        # Read the content of the original .prj file
+        with open(local_prj_path, 'r') as prj_file:
+            prj_content = prj_file.read()
+
+        # Write the content to the new .prj file at local_out_prj_path
+        with open(local_out_prj_path, 'w') as out_prj_file:
+            out_prj_file.write(prj_content)
+            
         # Upload the new shapefile components to S3
         print("Uploading intersection with Feature infos shapefile to S3...")
         s3_client.upload_file(local_out_shp_path, bucket_name, f"{s3_folder_feature_info}{forestID}_vector_w_HK_infos.shp")
