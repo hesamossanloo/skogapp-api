@@ -13,6 +13,7 @@ def calculate_bounds(multipolygon):
     return envelope
 
 def cut(event):
+    print("Starting the cut function.")
     geojson_dict = json.loads(event['body'])
     
     min_x, min_y = float('inf'), float('inf')
@@ -41,8 +42,9 @@ def cut(event):
                 bounds = calculate_bounds(ogr_geom)
                 min_x, max_x = min(min_x, bounds[0]), max(max_x, bounds[1])
                 min_y, max_y = min(min_y, bounds[2]), max(max_y, bounds[3])
-                
+        
         combined_bounds_STR = f"{min_y},{min_x},{max_y},{max_x}"
+        print(f"Combined bounds: {combined_bounds_STR}")
     else:
         response = {
             'statusCode': 400,
@@ -89,6 +91,7 @@ def cut(event):
     
     gdal.UseExceptions()
     try:
+        print("Starting the GDAL Warp operation.")
         geojson_STR = json.dumps(geojson_dict)
         geojson_vsimem_path = '/vsimem/temp_geojson.json'
         gdal.FileFromMemBuffer(geojson_vsimem_path, geojson_STR)
@@ -113,6 +116,7 @@ def cut(event):
         return add_cors_headers(response)
 
     # Download SVG
+    print("Downloading the SVG image.")
     WMS_SVG_params = WMS_TIF_params.copy()
     WMS_SVG_params["FORMAT"] = "image/svg+xml"
     encoded_params_svg = urlencode(WMS_SVG_params, safe=',:')
@@ -133,6 +137,7 @@ def cut(event):
 
     # Upload the SVG file to S3
     try:
+        print("Uploading the SVG file to S3.")
         s3_key_svg = f"{s3_folder}{forestID}_HK_image_cut.svg"
         s3.upload_file(downloaded_svg_path, bucket_name, s3_key_svg)
         
@@ -160,12 +165,14 @@ def add_cors_headers(response):
 
 def lambda_handler(event, context):
     if event['httpMethod'] == 'OPTIONS':
+        print(f"Received API Gateway event: {event['httpMethod']}")
         response = {
             'statusCode': 200,
             'body': json.dumps({})
         }
         return add_cors_headers(response)
     elif event['httpMethod'] == 'POST':
+        print(f"Received API Gateway event: {event['httpMethod']}")
         return cut(event)
     else:
         response = {
