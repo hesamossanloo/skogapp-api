@@ -2,7 +2,149 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: SkogApp SAM Template for AWS Lambda and API Gateway
 
+############################## RESOURCES
 Resources:
+  SkogAppOutputsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: skogapp-lambda-generated-outputs
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Function: !GetAtt SkogAppHKFeatureInfo.Arn
+            Event: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: SkogAppHKVectorize/
+    DependsOn: SkogAppHKFeatureInfoPermission
+
+  SkogAppHKFeatureInfoPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt SkogAppHKFeatureInfo.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: arn:aws:s3:::skogapp-lambda-generated-outputs
+  ############################## QUEUES
+  SkogAppQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: SkogAppQueue
+      VisibilityTimeout: 900  # Set visibility timeout to match or exceed Lambda function timeout
+  ############################## VPC
+  SkogAppVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: SkogAppVPC
+
+  SkogAppPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SkogAppVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: SkogAppPublicSubnet
+
+  SkogAppPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SkogAppVPC
+      CidrBlock: 10.0.2.0/24
+      Tags:
+        - Key: Name
+          Value: SkogAppPrivateSubnet
+
+  SkogAppInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: SkogAppInternetGateway
+
+  SkogAppAttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref SkogAppVPC
+      InternetGatewayId: !Ref SkogAppInternetGateway
+
+  SkogAppPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SkogAppVPC
+      Tags:
+        - Key: Name
+          Value: SkogAppPublicRouteTable
+
+  SkogAppPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref SkogAppPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref SkogAppInternetGateway
+
+  SkogAppNatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt SkogAppEIP.AllocationId
+      SubnetId: !Ref SkogAppPublicSubnet
+      Tags:
+        - Key: Name
+          Value: SkogAppNatGateway
+
+  SkogAppEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  SkogAppPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SkogAppVPC
+      Tags:
+        - Key: Name
+          Value: SkogAppPrivateRouteTable
+
+  SkogAppPrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref SkogAppPrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref SkogAppNatGateway
+
+  SkogAppPublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SkogAppPublicSubnet
+      RouteTableId: !Ref SkogAppPublicRouteTable
+
+  SkogAppPrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SkogAppPrivateSubnet
+      RouteTableId: !Ref SkogAppPrivateRouteTable
+
+  SkogAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow outbound traffic
+      VpcId: !Ref SkogAppVPC
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: SkogAppSecurityGroup
+
+  ############################## LAMBDAS 
   SkogAppTeigFinder:
     Type: AWS::Serverless::Function
     Properties:
@@ -236,117 +378,75 @@ Resources:
       RuntimeManagementConfig:
         UpdateRuntimeOn: Auto
   
-  SkogAppVPC:
-    Type: AWS::EC2::VPC
+  SkogAppHKFeatureInfo:
+    Type: AWS::Serverless::Function
     Properties:
-      CidrBlock: 10.0.0.0/16
-      Tags:
-        - Key: Name
-          Value: SkogAppVPC
-
-  SkogAppPublicSubnet:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref SkogAppVPC
-      CidrBlock: 10.0.1.0/24
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: SkogAppPublicSubnet
-
-  SkogAppPrivateSubnet:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref SkogAppVPC
-      CidrBlock: 10.0.2.0/24
-      Tags:
-        - Key: Name
-          Value: SkogAppPrivateSubnet
-
-  SkogAppInternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Properties:
-      Tags:
-        - Key: Name
-          Value: SkogAppInternetGateway
-
-  SkogAppAttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref SkogAppVPC
-      InternetGatewayId: !Ref SkogAppInternetGateway
-
-  SkogAppPublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref SkogAppVPC
-      Tags:
-        - Key: Name
-          Value: SkogAppPublicRouteTable
-
-  SkogAppPublicRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref SkogAppPublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref SkogAppInternetGateway
-
-  SkogAppNatGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt SkogAppEIP.AllocationId
-      SubnetId: !Ref SkogAppPublicSubnet
-      Tags:
-        - Key: Name
-          Value: SkogAppNatGateway
-
-  SkogAppEIP:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-
-  SkogAppPrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref SkogAppVPC
-      Tags:
-        - Key: Name
-          Value: SkogAppPrivateRouteTable
-
-  SkogAppPrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref SkogAppPrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref SkogAppNatGateway
-
-  SkogAppPublicSubnetRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref SkogAppPublicSubnet
-      RouteTableId: !Ref SkogAppPublicRouteTable
-
-  SkogAppPrivateSubnetRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref SkogAppPrivateSubnet
-      RouteTableId: !Ref SkogAppPrivateRouteTable
-
-  SkogAppSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Allow outbound traffic
-      VpcId: !Ref SkogAppVPC
-      SecurityGroupIngress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: SkogAppSecurityGroup
-
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureInfo-V1.zip
+      Description: 'Get the Feature Info from Nibio HK WMS based on the created SHP file on S3'
+      Handler: lambda_function.lambda_handler
+      FunctionName: SkogAppHKFeatureInfo
+      MemorySize: 128
+      Timeout: 900
+      Runtime: python3.11
+      Architectures:
+        - x86_64
+      EphemeralStorage:
+        Size: 512
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 21600
+        MaximumRetryAttempts: 2
+      Layers:
+        - arn:aws:lambda:eu-north-1:992382379679:layer:shapely:1
+      PackageType: Zip
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+              Resource: arn:aws:logs:eu-north-1:992382379679:*
+            - Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource:
+                - arn:aws:logs:eu-north-1:992382379679:log-group:/aws/lambda/SkogAppHKFeatureInfo:*
+            - Sid: AWSLambdaVPCAccessExecutionPermissions
+              Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+                - ec2:CreateNetworkInterface
+                - ec2:DescribeNetworkInterfaces
+                - ec2:DescribeSubnets
+                - ec2:DeleteNetworkInterface
+                - ec2:AssignPrivateIpAddresses
+                - ec2:UnassignPrivateIpAddresses
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:PutObjectAcl
+                - s3:GetObject
+                - s3:GetObjectAcl
+                - s3:ListBucket
+                - s3:HeadObject
+              Resource: 
+                - arn:aws:s3:::skogapp-lambda-generated-outputs
+                - arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKVectorize/*
+                - arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKFeatureInfo/*
+      SnapStart:
+        ApplyOn: None
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt SkogAppSecurityGroup.GroupId
+        SubnetIds:
+          - !Ref SkogAppPrivateSubnet
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: Auto
+                
+  ############################## API GATEWAY
   ApiGatewayRole:
     Type: AWS::IAM::Role
     Properties:
@@ -367,12 +467,6 @@ Resources:
                   - "sqs:*"
                 Resource: !GetAtt SkogAppQueue.Arn
   
-  SkogAppQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: SkogAppQueue
-      VisibilityTimeout: 900  # Set visibility timeout to match or exceed Lambda function timeout
-      
   SkogAppApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -414,10 +508,6 @@ Resources:
                 requestTemplates:
                   application/json: |
                     Action=SendMessage&MessageBody=$util.urlEncode($input.body)
-          definitions:
-            Empty:
-              type: object
-              title: Empty
           /find:
             post:
               x-amazon-apigateway-integration:
@@ -436,3 +526,7 @@ Resources:
                 uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SkogAppHKVectorize.Arn}/invocations"
                 httpMethod: POST
                 type: aws_proxy
+        definitions:
+          Empty:
+            type: object
+            title: Empty
