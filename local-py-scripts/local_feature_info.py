@@ -13,7 +13,9 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define paths relative to the script's directory
 intersected_geojson_shp_path = os.path.join(script_dir, "outputs/vectorize/intersected_image.shp")
+intersected_geojson_prj_path = os.path.join(script_dir, "outputs/vectorize/intersected_image.prj")
 intersected_geojson_shp_w_info_path = os.path.join(script_dir, "outputs/vectorize/intersected_image_w_info.shp")
+intersected_geojson_prj_w_info_path = os.path.join(script_dir, "outputs/vectorize/intersected_image_w_info.prj")
 
 app = Flask(__name__)
 
@@ -50,14 +52,6 @@ def parse_xml_response(response_text):
 
 @app.route('/featureInfo', methods=['POST'])
 def featureInfo():
-    # Define the WMS parameters
-    wms_url = 'https://wms.nibio.no/cgi-bin/skogbruksplan'
-    wms_layer = 'hogstklasser'
-    width = 788
-    height = 675
-    info_format = 'application/vnd.ogc.gml'
-    feature_count = 10
-
     try:
         # Read the shapefile
         sf = shapefile.Reader(intersected_geojson_shp_path)
@@ -80,6 +74,14 @@ def featureInfo():
 
         # Define the projection transformation to a suitable CRS for area calculation (e.g., EPSG:3857)
         project = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True).transform
+
+        # Define the WMS parameters
+        wms_url = 'https://wms.nibio.no/cgi-bin/skogbruksplan'
+        wms_layer = 'hogstklasser'
+        width = 788
+        height = 675
+        info_format = 'application/vnd.ogc.gml'
+        feature_count = 10
 
         # Process each shape and record
         for shape_rec in sf.shapeRecords():
@@ -130,6 +132,14 @@ def featureInfo():
                     writer.shape(shape_rec.shape)
 
         writer.close()
+        
+        # Read the content of the original .prj file
+        with open(intersected_geojson_prj_path, 'r') as prj_file:
+            prj_content = prj_file.read()
+
+        # Write the content to the new .prj file at local_out_prj_path
+        with open(intersected_geojson_prj_w_info_path, 'w') as out_prj_file:
+            out_prj_file.write(prj_content)
 
         return jsonify({'message': 'Feature info request successful and shapefile updated.'})
 
