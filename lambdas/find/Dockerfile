@@ -15,4 +15,4 @@ COPY app ${LAMBDA_TASK_ROOT}/app
 COPY run.py ${LAMBDA_TASK_ROOT}
 
 # Set the CMD to your handler
-CMD [ "run.lambda_handler" ]
+CMD [ "lambda_function.lambda_handler" ]
