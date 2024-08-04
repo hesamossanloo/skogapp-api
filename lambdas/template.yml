@@ -17,12 +17,28 @@ Resources:
                 Rules:
                   - Name: prefix
                     Value: SkogAppHKVectorize/
-    DependsOn: SkogAppHKFeatureInfoPermission
+          - Function: !GetAtt SkogAppHKFeatureAirtable.Arn
+            Event: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: SkogAppHKFeatureInfo/
+    DependsOn: 
+      - SkogAppHKFeatureInfoPermission
+      - SkogAppHKFeatureAirtablePermission
 
   SkogAppHKFeatureInfoPermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt SkogAppHKFeatureInfo.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: arn:aws:s3:::skogapp-lambda-generated-outputs
+  SkogAppHKFeatureAirtablePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt SkogAppHKFeatureAirtable.Arn
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: arn:aws:s3:::skogapp-lambda-generated-outputs
@@ -435,6 +451,75 @@ Resources:
               Resource: 
                 - arn:aws:s3:::skogapp-lambda-generated-outputs
                 - arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKVectorize/*
+                - arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKFeatureInfo/*
+      SnapStart:
+        ApplyOn: None
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt SkogAppSecurityGroup.GroupId
+        SubnetIds:
+          - !Ref SkogAppPrivateSubnet
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: Auto
+  
+  SkogAppHKFeatureAirtable:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureAirtable-V1.zip
+      Description: 'Get the Feature Info SHP file n S3 and creates an Airtable for the user'
+      Handler: lambda_function.lambda_handler
+      FunctionName: SkogAppHKFeatureAirtable
+      MemorySize: 512
+      Timeout: 900
+      Runtime: python3.11
+      Architectures:
+        - x86_64
+      EphemeralStorage:
+        Size: 512
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 21600
+        MaximumRetryAttempts: 2
+      Environment:
+        Variables:
+          AIRTABLE_PERSONAL_ACCESS_TOKEN: !Sub "{{resolve:secretsmanager:arn:aws:secretsmanager:eu-north-1:992382379679:secret:skogapp/prod/airtable-IIJFht:SecretString:AIRTABLE_PERSONAL_ACCESS_TOKEN}}"
+          AIRTABLE_BASE_ID: !Sub "{{resolve:secretsmanager:arn:aws:secretsmanager:eu-north-1:992382379679:secret:skogapp/prod/airtable-IIJFht:SecretString:AIRTABLE_BASE_ID}}"
+      PackageType: Zip
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+              Resource: arn:aws:logs:eu-north-1:992382379679:*
+            - Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource:
+                - arn:aws:logs:eu-north-1:992382379679:log-group:/aws/lambda/SkogAppHKFeatureInfo:*
+            - Sid: AWSLambdaVPCAccessExecutionPermissions
+              Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+                - ec2:CreateNetworkInterface
+                - ec2:DescribeNetworkInterfaces
+                - ec2:DescribeSubnets
+                - ec2:DeleteNetworkInterface
+                - ec2:AssignPrivateIpAddresses
+                - ec2:UnassignPrivateIpAddresses
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:PutObjectAcl
+                - s3:GetObject
+                - s3:GetObjectAcl
+                - s3:ListBucket
+                - s3:HeadObject
+              Resource: 
+                - arn:aws:s3:::skogapp-lambda-generated-outputs
                 - arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKFeatureInfo/*
       SnapStart:
         ApplyOn: None
