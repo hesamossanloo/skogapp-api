@@ -2,10 +2,11 @@
 
 # Find the DB password from bitwarden, under AWS PostGIS Credentials
 # Define the PostgreSQL connection string
-PG_CONN="host=database-postgis-instance.c9iaucgywgv3.eu-north-1.rds.amazonaws.com user=postgres dbname=postgisDB password=$Password options='-c statement_timeout=0'"
+PG_CONN="host=database-postgis-instance.c9iaucgywgv3.eu-north-1.rds.amazonaws.com user=postgres dbname=postgisDB password=UiLUBELKoTBMv9*$ options='-c statement_timeout=0'"
 
 # Path to the GDB file
-GDB_PATH="/Users/hesam.ossanloo/Downloads/Startup/SkogApp/Mads/Kartverket/Matrikkel_0000_Norge_25833.gdb"
+GDB_PATH="/Users/hesam.ossanloo/Downloads/Startup/SkogApp/Mads/QGIS/Data/SR16/0000_25833_SR16_GDB.gdb"
+# GDB_PATH="/Users/hesam.ossanloo/Downloads/Startup/SkogApp/Mads/Kartverket/Matrikkel_0000_Norge_25833.gdb"
 
 # Ensure logs directory exists
 mkdir -p logs

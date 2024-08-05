@@ -19,3 +19,4 @@ packaged.yaml
 lambdas/packaged.yaml
 
 .aws-sam
+*.csv

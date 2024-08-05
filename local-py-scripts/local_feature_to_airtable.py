@@ -65,7 +65,7 @@ airtable_fields = [
         'choices': [
             {'name': 'Furu', 'color': 'blueLight2'},
             {'name': 'Gran', 'color': 'greenLight2'},
-            {'name': 'Bjørk / Lauv', 'color': 'yellowLight2'}
+            {'name': 'Bjørk / lauv', 'color': 'yellowLight2'}
         ]
     }},
     {'name': 'arealm2', 'type': 'number', 'options': {'precision': 0}},

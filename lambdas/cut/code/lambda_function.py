@@ -161,7 +161,7 @@ def add_cors_headers(response):
         'Access-Control-Allow-Methods': 'OPTIONS,POST',
         'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
     }
-    return response  
+    return response
 
 def lambda_handler(event, context):
     if event['httpMethod'] == 'OPTIONS':
