@@ -66,7 +66,7 @@ airtable_fields = [
         'choices': [
             {'name': 'Furu', 'color': 'blueLight2'},
             {'name': 'Gran', 'color': 'greenLight2'},
-            {'name': 'Bjørk / Lauv', 'color': 'yellowLight2'}
+            {'name': 'Bjørk / lauv', 'color': 'yellowLight2'}
         ]
     }},
     {'name': 'arealm2', 'type': 'number', 'options': {'precision': 0}},
@@ -96,7 +96,8 @@ airtable_fields = [
     {'name': 'carbon_captured_next_year', 'type': 'number', 'options': {'precision': 8}},
     {'name': 'years_to_maturity', 'type': 'number', 'options': {'precision': 8}},
     {'name': 'volume_at_maturity', 'type': 'number', 'options': {'precision': 8}},
-    {'name': 'volume_at_maturity_without_bark', 'type': 'number', 'options': {'precision': 8}}
+    {'name': 'volume_at_maturity_without_bark', 'type': 'number', 'options': {'precision': 8}},
+    {'name': 'yield_requirement', 'type': 'number', 'options': {'precision': 1}},
 ]
 
 def lambda_handler(event, context):
@@ -123,7 +124,7 @@ def lambda_handler(event, context):
         if not forestID:
             print('No valid forestID found in the event.')
             return
-        print(f"Processing forestID: {forestID}")
+        print(f"Processing table for forestID: {forestID}")
         # build the table name with forestID
         TABLE_NAME = f'{forestID}_bestandsdata'
         try:
@@ -197,17 +198,24 @@ def lambda_handler(event, context):
                             except ValueError:
                                 mapped_record[key] = None  # Handle the case where value cannot be converted to float
 
+                # Initialize a list to keep track of processed bestand_ids
+                processed_bestand_ids = []
                 # Insert or update the record in the Airtable table
                 table_records = table.all()
                 if len(table_records) == 0:
                     print(f"Inserting record to the table {TABLE_NAME}: {mapped_record['bestand_id']}")
                     table.create(mapped_record)
+                    processed_bestand_ids.append(mapped_record['bestand_id'])
                 else:
                     print(f"Upserting record in the table {TABLE_NAME}: {mapped_record['bestand_id']}")
                     if mapped_record['bestand_id'] == '':
                         print(f"Skipping record with DN: {mapped_record['DN']} because of empty bestand_id")
                         continue
-                    table.batch_upsert([{"fields": mapped_record}], ['bestand_id', 'DN'], replace=True)
+                    if mapped_record['bestand_id'] not in processed_bestand_ids:
+                        table.batch_upsert([{"fields": mapped_record}], ['bestand_id', 'DN'], replace=True)
+                        processed_bestand_ids.append(mapped_record['bestand_id'])
+                    else:
+                        print(f"Skipping record with bestand_id: {mapped_record['bestand_id']} as it is already processed")
                     
         except Exception as e:
             print(f"Error connecting to Airtable: {e}")
