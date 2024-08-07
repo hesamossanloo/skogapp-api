@@ -90,7 +90,15 @@ Resources:
     Properties:
       VpcId: !Ref SkogAppVPC
       InternetGatewayId: !Ref SkogAppInternetGateway
-
+  
+  SkogAppPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SkogAppVPC
+      Tags:
+        - Key: Name
+          Value: SkogAppPrivateRouteTable
+  
   SkogAppPublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -119,14 +127,6 @@ Resources:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
-
-  SkogAppPrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref SkogAppVPC
-      Tags:
-        - Key: Name
-          Value: SkogAppPrivateRouteTable
 
   SkogAppPrivateRoute:
     Type: AWS::EC2::Route
@@ -162,6 +162,44 @@ Resources:
         - Key: Name
           Value: SkogAppSecurityGroup
 
+  VPCPeeringConnection:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref SkogAppVPC  # The VPC for your Lambda functions
+      PeerVpcId: vpc-0d994e44521f7b039  # The VPC for your RDS instance
+      PeerRegion: eu-north-1  # Adjust this if your RDS is in a different region
+      Tags:
+        - Key: Name
+          Value: LambdaToRDSVPCPeering
+
+  VPCPeeringConnectionRouteToRDS:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref SkogAppPrivateRouteTable  # The route table of the Lambda VPC
+      DestinationCidrBlock: 172.31.0.0/16  # The CIDR block of your RDS VPC
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  VPCPeeringConnectionRouteToLambda:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: rtb-0bce011d3fb717246  # The main route table ID of the RDS VPC
+      DestinationCidrBlock: !GetAtt SkogAppVPC.CidrBlock
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+  
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow access from Lambda VPC
+      VpcId: vpc-0d994e44521f7b039  # The VPC for your RDS instance
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !GetAtt SkogAppVPC.CidrBlock
+      Tags:
+        - Key: Name
+          Value: RdsSecurityGroup
+  
   ############################## LAMBDAS 
   SkogAppTeigFinder:
     Type: AWS::Serverless::Function
@@ -536,11 +574,11 @@ Resources:
   SkogAppSR16IntersectionToAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppSR16IntersectionToAirtable-V1.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppSR16IntersectionToAirtable-V4.zip
       Description: 'Intersect the SR16 data with the given GeoJSON and send the data to Airtable'
       FunctionName: SkogAppSR16IntersectionToAirtable
       MemorySize: 128
-      Timeout: 5
+      Timeout: 900
       Handler: lambda_function.lambda_handler
       Runtime: python3.11
       Architectures:
@@ -560,6 +598,7 @@ Resources:
         MaximumRetryAttempts: 2
       Layers:
         - arn:aws:lambda:eu-north-1:992382379679:layer:psycopg2:1
+        - arn:aws:lambda:eu-north-1:992382379679:layer:shapely:1
       PackageType: Zip
       Policies:
         - Statement:
@@ -586,16 +625,21 @@ Resources:
                 - ec2:AssignPrivateIpAddresses
                 - ec2:UnassignPrivateIpAddresses
               Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectAcl
+                - s3:ListBucket
+                - s3:HeadObject
+              Resource: arn:aws:s3:::skogapp-lambda-generated-outputs/SkogAppHKFeatureInfo/*
       SnapStart:
         ApplyOn: None
       VpcConfig:
         SecurityGroupIds:
-          - sg-038b9a5368c362453
+          - !GetAtt SkogAppSecurityGroup.GroupId
         SubnetIds:
-          - subnet-041df92fe43a65071
-          - subnet-018ba468c4eb92cc7
-          - subnet-0a48cf26e0eafe0cf
-        Ipv6AllowedForDualStack: false
+          - !Ref SkogAppPrivateSubnet
       Events:
         Api1:
           Type: Api
