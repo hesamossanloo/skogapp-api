@@ -61,7 +61,7 @@ python -c "import shapefile; import re; from shapely.geometry import shape, mapp
 python -c "import shapefile; import requests"
 python -c "import shapefile; from pyairtable import Api"
 python /var/task/lambda_function.py event.json
-docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V2.zip
+docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V3.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureInfo-V5.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V2.zip
 docker cp lambda:/tmp/package.zip SkogAppHKCut-V3.zip

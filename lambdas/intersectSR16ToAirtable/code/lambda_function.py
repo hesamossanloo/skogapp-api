@@ -1,9 +1,24 @@
+import boto3
 import json
 import os
-import geopandas as gpd
-import pandas as pd
+import fiona
+from shapely.geometry import shape
+from pyproj import CRS, Transformer
 import psycopg2
 from pyairtable import Api
+
+# Initialize S3 client
+s3 = boto3.client('s3')
+
+# Define S3 bucket and file paths
+# Define the S3 bucket and folders
+bucket_name = 'skogapp-lambda-generated-outputs'
+s3_folder_feature_info = 'SkogAppHKFeatureInfo/'
+
+# Define local file paths
+local_shp = '/tmp/vector_w_HK_infos.shp'
+local_shx = '/tmp/vector_w_HK_infos.shx'
+local_dbf = '/tmp/vector_w_HK_infos.dbf'
 
 # Airtable configuration
 AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv('AIRTABLE_PERSONAL_ACCESS_TOKEN')
@@ -89,28 +104,27 @@ def query_fragment(geom, cursor):
     cursor.execute(query, (json.dumps(geom),))
     return cursor.fetchone()[0]
 
-# Function to update Airtable rows based on DataFrame
-def update_airtable_from_df(df, table):
+# Function to update Airtable rows based on a list of dictionaries
+def update_airtable_from_dict(data, table):
     # Fetch all records from the table
     records = table.all()
     record_map = {record['fields']['bestand_id']: record['id'] for record in records if 'bestand_id' in record['fields']}
     
-    # Create a mapping of Airtable field names to DataFrame column names
+    # Create a mapping of Airtable field names to dictionary keys
     airtable_field_names = [field['name'] for field in airtable_fields]
-    df_columns = df.columns.tolist()
-    matching_columns = [col for col in df_columns if col in airtable_field_names]
     
-    # Iterate through each row in the DataFrame
-    for index, row in df.iterrows():
+    # Iterate through each dictionary in the data list
+    for row in data:
         bestand_id = row['bestand_id']
         if bestand_id in record_map:
             record_id = record_map[bestand_id]
             # Prepare the data to update
-            update_data = row[matching_columns].dropna().to_dict()  # Convert row to dictionary and drop NaN values
+            update_data = {key: value for key, value in row.items() if key in airtable_field_names and value is not None}
             table.update(record_id, update_data)
             print(f"Updated record with bestand_id: {bestand_id}")
         else:
             print(f"Record with bestand_id: {bestand_id} not found in Airtable")
+            
 def find_SR16_intersection(event):
     print("Finding SR16 intersection")
     # Parse the GeoJSON from the request
@@ -136,6 +150,7 @@ def find_SR16_intersection(event):
             "features": []
         }
 
+        print("Querying the database...")
         for feature in geojson_dict['features']:
             geom = feature['geometry']
             result = query_fragment(geom, cursor)
@@ -153,76 +168,80 @@ def find_SR16_intersection(event):
             cursor.close()
         if conn:
             conn.close()
-    # Load the vector layers
-    HK_SHP_path = gpd.read_file('/Users/hesam.ossanloo/Downloads/AkselForest1_vector_w_HK_infos.shp')
-    SR16_intersect_GeoJSON_path = gpd.GeoDataFrame.from_features(SR16_intersection_results['features'])
-
-    # Print columns to ensure correct names
-    print("HK_SHP Columns: ", HK_SHP_path.columns)
-    print("SR16_intersect_GeoJSON Columns: ", SR16_intersect_GeoJSON_path.columns)
-
-    # Check and set CRS if not defined
-    if HK_SHP_path.crs is None:
-        HK_SHP_path.set_crs(epsg=4326, inplace=True)  # Assuming WGS84 CRS, change if needed
-
-    if SR16_intersect_GeoJSON_path.crs is None:
-        SR16_intersect_GeoJSON_path.set_crs(epsg=4326, inplace=True)  # Assuming WGS84 CRS, change if needed
     
+    print("Downloading the vector files from S3...")
+    # Download vector files with feature infos from S3
+    s3.download_file(bucket_name, f'{s3_folder_feature_info}{forestID}_vector_w_HK_infos.shp', local_shp)
+    s3.download_file(bucket_name, f'{s3_folder_feature_info}{forestID}_vector_w_HK_infos.shx', local_shx)
+    s3.download_file(bucket_name, f'{s3_folder_feature_info}{forestID}_vector_w_HK_infos.dbf', local_dbf)
+
+    print("Processing the vector files...")
+    # Read shapefile using fiona
+    with fiona.open(local_shp) as shp:
+        shp_crs = CRS(shp.crs) if shp.crs else CRS.from_epsg(4326)  # Assuming WGS84 CRS if not defined
+        HK_SHP_Geometries = [shape(feature['geometry']) for feature in shp]
+        HK_SHP_Attributes = [{**feature['properties'], 'geometry': shape(feature['geometry'])} for feature in shp]
+
+    # Convert GeoJSON features to shapely geometries
+    SR16_intersect_GeoJSON_Features = [shape(feature['geometry']) for feature in SR16_intersection_results['features']]
+    SR16_intersect_GeoJSON_Attributes = [{**feature['properties'], 'geometry': shape(feature['geometry'])} for feature in SR16_intersection_results['features']]
+
+    # Assuming GeoJSON features are in WGS84 CRS
+    geojson_crs = CRS.from_epsg(4326)
+
     # Ensure both layers are in the same CRS
-    HK_SHP_path = HK_SHP_path.to_crs(SR16_intersect_GeoJSON_path.crs)
+    if shp_crs != geojson_crs:
+        transformer = Transformer.from_crs(shp_crs, geojson_crs, always_xy=True)
+        HK_SHP_Geometries = [transformer.transform(geom) for geom in HK_SHP_Geometries]
 
+    # Print geometries to ensure correct data
+    print("HK_SHP Geometries: ", HK_SHP_Geometries)
+    print("SR16_intersect_GeoJSON Geometries: ", SR16_intersect_GeoJSON_Features)
+
+    print("Processing the intersection results...")
     # Perform the spatial join to calculate the overlap
-    joined = gpd.overlay(HK_SHP_path, SR16_intersect_GeoJSON_path, how='intersection')
-
-    # Print joined columns to check if 'teig_best_' is present The reason they are cut is that in shp file
-    # the column names are cut to 10 characters
-    print("Joined Layer Columns: ", joined.columns)
-
-    # Calculate the area of each intersection
-    joined['intersection_area'] = joined.area
-
-    # Calculate the percentage of overlap relative to the area of the polygons in the first layer
-    first_layer_areas = HK_SHP_path[['teig_best_', 'geometry']].copy()
-    first_layer_areas['first_layer_area'] = first_layer_areas.geometry.area
-
-    # Merge the first layer areas into the joined dataframe to calculate overlap percentages
-    joined = joined.merge(first_layer_areas[['teig_best_', 'first_layer_area']], on='teig_best_')
-    joined['overlap_percentage'] = (joined['intersection_area'] / joined['first_layer_area']) * 100
+    intersections = []
+    for hk_geom, hk_attr in zip(HK_SHP_Geometries, HK_SHP_Attributes):
+        for sr_geom, sr_attr in zip(SR16_intersect_GeoJSON_Features, SR16_intersect_GeoJSON_Attributes):
+            if hk_geom.intersects(sr_geom):
+                intersection = hk_geom.intersection(sr_geom)
+                intersection_area = intersection.area
+                overlap_percentage = (intersection_area / hk_geom.area) * 100
+                intersection_attributes = {**hk_attr, **sr_attr, 'intersection_area': intersection_area, 'overlap_percentage': overlap_percentage}
+                intersections.append(intersection_attributes)
 
     # List of attributes to be averaged
     attributes = ['srvolmb', 'srvolub', 'srbmo', 'srbmu', 'srhoydem', 'srdiam', 'srdiam_ge8', 
                 'srgrflate', 'srhoydeo', 'srtrean', 'srtrean_ge8', 'srtrean_ge10', 
                 'srtrean_ge16', 'srlai', 'srkronedek']
 
-    # Calculate weighted averages
-    for attr in attributes:
-        joined[attr] = joined[attr] * joined['overlap_percentage']
-
-    # Group by teig_best_ to aggregate the required values
-    grouped = joined.groupby('teig_best_').agg(
-        {**{attr: 'sum' for attr in attributes}, 'overlap_percentage': 'sum'}
-    ).reset_index()
+    print("Aggregating the required values...")
+    # Aggregate the required values
+    aggregated_data = {}
+    for intersection in intersections:
+        teig_best_ = intersection['teig_best_']
+        if teig_best_ not in aggregated_data:
+            aggregated_data[teig_best_] = {attr: 0 for attr in attributes}
+            aggregated_data[teig_best_]['overlap_percentage'] = 0
+        for attr in attributes:
+            aggregated_data[teig_best_][attr] += intersection[attr] * intersection['overlap_percentage']
+        aggregated_data[teig_best_]['overlap_percentage'] += intersection['overlap_percentage']
 
     # Normalize the attributes by the overlap percentage sum to get the average values
-    for attr in attributes:
-        grouped[attr] = grouped[attr] / grouped['overlap_percentage']
+    for teig_best_, data in aggregated_data.items():
+        for attr in attributes:
+            data[attr] /= data['overlap_percentage']
 
     # Function to get prod_lokalid with overlap percentage
-    def get_prod_lokalid_overlap(df):
-        return ', '.join(f"({row['prod_lokalid']} & {row['overlap_percentage']:.2f}%)" for idx, row in df.iterrows())
+    def get_prod_lokalid_overlap(intersections, teig_best_):
+        return ', '.join(f"({intersection['prod_lokalid']} & {intersection['overlap_percentage']:.2f}%)" for intersection in intersections if intersection['teig_best_'] == teig_best_)
 
     # Add the prod_lokalid with the overlap percentage
-    prod_lokalid_overlap = joined.groupby('teig_best_').apply(get_prod_lokalid_overlap).reset_index()
-    prod_lokalid_overlap.columns = ['teig_best_', 'prod_lokalid_overlap']
-
-    # Merge the aggregated data with prod_lokalid_overlap
-    final_df = pd.merge(grouped, prod_lokalid_overlap, on='teig_best_')
-
-    # Drop the overlap_percentage column as it's no longer needed
-    final_df = final_df.drop(columns=['overlap_percentage'])
+    for teig_best_ in aggregated_data.keys():
+        aggregated_data[teig_best_]['prod_lokalid_overlap'] = get_prod_lokalid_overlap(intersections, teig_best_)
 
     # Rename the column teig_best_ to bestand_id
-    final_df = final_df.rename(columns={'teig_best_': 'bestand_id'})
+    final_data = [{'bestand_id': teig_best_, **data} for teig_best_, data in aggregated_data.items()]
 
     print(f"Processing table for forestID: {forestID}")
     # build the table name with forestID
@@ -237,12 +256,12 @@ def find_SR16_intersection(event):
         if table_exists:
             print(f"Table {TABLE_NAME} exists. Proceeding with updates...")
             table = base.table(TABLE_NAME)
-            update_airtable_from_df(final_df, table)
+            update_airtable_from_dict(final_data, table)
         else:
             print(f"Table {TABLE_NAME} does not exist in the Airtable")
             raise Exception(f"Table {TABLE_NAME} does not exist in the Airtable")
 
-        print(f"Table is ready. Upserting the DataFrame to Airtable...")   
+        print(f"Table is ready. Upserting the data to Airtable...")   
     except Exception as e:
         print(f"Error connecting to Airtable: {e}")
         response = {
@@ -250,17 +269,16 @@ def find_SR16_intersection(event):
             'body': json.dumps({'message': 'Error connecting to Airtable', 'error': str(e)})
         }
         return add_cors_headers(response)
-    # Save the result to a CSV file
-    final_df.to_csv(f'{forestID}_SR16-HK-intersection_Flask.csv', index=False)
-    
 
-    print("CSV file with merged attributes has been created successfully.")
-    
+    # Clean up local files if needed
+    os.remove(local_shp)
+    os.remove(local_shx)
+    os.remove(local_dbf)
     response = {
         'statusCode': 200,
         'body': json.dumps({'message': 'SR16 intersection with HK GeoJSON has been updated successfully on the table!'}),
     }
-    
+
     return add_cors_headers(response)
             
 def lambda_handler(event, context):
