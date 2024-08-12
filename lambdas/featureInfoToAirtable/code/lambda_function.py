@@ -174,6 +174,7 @@ def lambda_handler(event, context):
             records = sf.records()
             
             # Process each record in the shapefile
+            processed_bestand_ids = []
             for record in records:
                 # Initialize the mapped_record with empty values
                 mapped_record = {airtable_field: '' for airtable_field in table_fields_names_maps.values()}
@@ -182,6 +183,8 @@ def lambda_handler(event, context):
                 for field_name, value in zip(field_names, record):
                     if field_name in table_fields_names_maps:
                         mapped_record[table_fields_names_maps[field_name]] = value
+
+                # Initialize a list to keep track of processed bestand_ids
 
                 # Cross-reference mapped_record with airtable_fields and cast values
                 for key, value in mapped_record.items():
@@ -198,8 +201,6 @@ def lambda_handler(event, context):
                             except ValueError:
                                 mapped_record[key] = None  # Handle the case where value cannot be converted to float
 
-                # Initialize a list to keep track of processed bestand_ids
-                processed_bestand_ids = []
                 # Insert or update the record in the Airtable table
                 table_records = table.all()
                 if len(table_records) == 0:
@@ -207,13 +208,15 @@ def lambda_handler(event, context):
                     table.create(mapped_record)
                     processed_bestand_ids.append(mapped_record['bestand_id'])
                 else:
-                    print(f"Upserting record in the table {TABLE_NAME}: {mapped_record['bestand_id']}")
                     if mapped_record['bestand_id'] == '':
                         print(f"Skipping record with DN: {mapped_record['DN']} because of empty bestand_id")
                         continue
                     if mapped_record['bestand_id'] not in processed_bestand_ids:
+                        print(f"{mapped_record['bestand_id']} not in processed_bestand_ids: {processed_bestand_ids}")
+                        print(f"Upserting record in the table {TABLE_NAME}: {mapped_record['bestand_id']}, with data: {mapped_record}")
                         table.batch_upsert([{"fields": mapped_record}], ['bestand_id', 'DN'], replace=True)
                         processed_bestand_ids.append(mapped_record['bestand_id'])
+                        print(f"Added {mapped_record['bestand_id']} to processed_bestand_ids. Current processed_bestand_ids: {processed_bestand_ids}")
                     else:
                         print(f"Skipping record with bestand_id: {mapped_record['bestand_id']} as it is already processed")
                     
