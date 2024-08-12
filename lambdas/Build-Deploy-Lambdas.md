@@ -68,6 +68,6 @@ docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V5.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureInfo-V5.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V3.zip
 docker cp lambda:/tmp/package.zip SkogAppHKCut-V3.zip
-docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V13.zip
+docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V14.zip
 docker stop lambda
 docker rm lambda
