@@ -365,7 +365,7 @@ Resources:
   SkogAppHKVectorize:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V13.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V14.zip
       Description: 'Vectorize the Forest SVG and SHP from Nibio HK WMS based on the given GeoJSON'
       FunctionName: SkogAppHKVectorize
       MemorySize: 128
