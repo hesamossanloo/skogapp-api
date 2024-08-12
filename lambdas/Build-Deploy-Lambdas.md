@@ -40,12 +40,14 @@ sam local invoke SkogAppTeigFilter -e tests/lambda/events/local_test_event.json
 ```
 
 
+docker build --platform linux/amd64 --tag skogapp-biomodel:latest .
 docker build --platform linux/amd64 --tag skogapp-sr16intersection:latest .
 docker build --platform linux/amd64 --tag skogapp-featureairtable:latest .
 docker build --platform linux/amd64 --tag skogapp-featureinfo:latest .
 docker build --platform linux/amd64 --tag skogapp-vectorize:latest .
 docker build --platform linux/amd64 --tag skogapp-cut:latest .
 docker run --platform linux/amd64 --name lambda skogapp-sr16intersection:latest
+docker run --platform linux/amd64 --name lambda skogapp-biomodel:latest
 docker run --platform linux/amd64 --name lambda skogapp-featureairtable:latest
 docker run --platform linux/amd64 --name lambda skogapp-featureinfo:latest
 docker run --name lambda -w /var/task --volume $(pwd):/local -itd skogapp-vectorize:latest bash
@@ -61,9 +63,10 @@ python -c "import shapefile; import re; from shapely.geometry import shape, mapp
 python -c "import shapefile; import requests"
 python -c "import shapefile; from pyairtable import Api"
 python /var/task/lambda_function.py event.json
-docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V3.zip
+docker cp lambda:/tmp/package.zip SkogAppModelToAirtable-V1.zip
+docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V5.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureInfo-V5.zip
-docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V2.zip
+docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V3.zip
 docker cp lambda:/tmp/package.zip SkogAppHKCut-V3.zip
 docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V13.zip
 docker stop lambda

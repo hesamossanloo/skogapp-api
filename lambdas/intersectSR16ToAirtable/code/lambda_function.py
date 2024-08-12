@@ -121,7 +121,7 @@ def update_airtable_from_dict(data, table):
             # Prepare the data to update
             update_data = {key: value for key, value in row.items() if key in airtable_field_names and value is not None}
             table.update(record_id, update_data)
-            print(f"Updated record with bestand_id: {bestand_id}")
+            print(f"Updated record with bestand_id: {bestand_id} with data: {update_data}")
         else:
             print(f"Record with bestand_id: {bestand_id} not found in Airtable")
             
@@ -261,7 +261,6 @@ def find_SR16_intersection(event):
             print(f"Table {TABLE_NAME} does not exist in the Airtable")
             raise Exception(f"Table {TABLE_NAME} does not exist in the Airtable")
 
-        print(f"Table is ready. Upserting the data to Airtable...")   
     except Exception as e:
         print(f"Error connecting to Airtable: {e}")
         response = {

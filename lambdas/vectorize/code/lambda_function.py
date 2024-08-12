@@ -34,6 +34,10 @@ def normalize_polygon(coords, precision=6):
     """
     Normalize and simplify polygon coordinates for comparison.
     """
+    if len(coords) < 4:
+        print(f"Ignoring polygon with insufficient coordinates: {coords}")
+        return None  # Indicate that this polygon should be skipped
+    
     # Create a Polygon object
     polygon = Polygon(coords)
     
@@ -65,20 +69,31 @@ def svg_to_shp(svg_path, shp_path, bbox, image_size, tolerance=6):
                 d = element.attrib.get('d', '')
                 if d:
                     coordinates = parse_svg_path(d)
+                    if not coordinates:
+                        print(f"Failed to get coordinates for {i}")
+                        continue
+                    
                     geo_coords = pixel_to_geo(coordinates, bbox, image_size)
+                    if not geo_coords:
+                        print(f"Failed to calculate geo_coords for {i}")
+                        continue
 
                     # Normalize and simplify the polygon coordinates
                     normalized_coords = normalize_polygon(geo_coords, precision=tolerance)
+                    if not normalized_coords:
+                        print(f"Failed to normalize coordinates for path {i}")
+                        continue
+                    
                     polygon_tuple = tuple(normalized_coords)
-
-                    if polygon_tuple not in processed_polygons:
-                        # Define the polygon
-                        polygon = [geo_coords]
-                        shp.poly(polygon)
-                        shp.record(i)
-
-                        # Add the polygon to the set of processed polygons
-                        processed_polygons.add(polygon_tuple)
+                    if polygon_tuple in processed_polygons:
+                        print(f"Duplicate polygon found for path {i}")
+                        continue
+                    
+                    polygon = [geo_coords]
+                    shp.poly(polygon)
+                    shp.record(i)
+                    # Add the polygon to the set of processed polygons
+                    processed_polygons.add(polygon_tuple)
 
         with open(f"{shp_path.replace('.shp', '.prj')}", 'w') as prj:
             prj.write(prj_content)
