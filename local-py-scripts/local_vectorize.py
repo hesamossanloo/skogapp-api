@@ -2,17 +2,15 @@ import os
 from flask import Flask, request, jsonify
 import json
 import xml.etree.ElementTree as ET
-from osgeo import ogr, gdal
+from osgeo import ogr, gdal, osr
 from urllib.parse import urlencode
 import requests
-import re
 
 import shapefile
 shapefile.VERBOSE = False
 
-from shapely.geometry import shape, Polygon, MultiPolygon
+from shapely.geometry import shape, Polygon, MultiPolygon, LinearRing
 from shapely.validation import make_valid
-from shapely.geometry.polygon import orient
 
 # Get the directory of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,104 +28,128 @@ prj_content = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.
         
 app = Flask(__name__)
 
-def normalize_polygon(coords, precision=6):
-    """
-    Normalize and simplify polygon coordinates for comparison.
-    """
-    if len(coords) < 4:
-        print(f"Ignoring polygon with insufficient coordinates: {coords}")
-        return None  # Indicate that this polygon should be skipped
-    print("Create a Polygon object for Normalization")
-    # Create a Polygon object
-    polygon = Polygon(coords)
+def parse_svg(svg_file, image_size, bbox):
+    svg_width, svg_height = image_size
+    # Parse the SVG file
+    tree = ET.parse(svg_file)
+    root = tree.getroot()
+
+    # SVG namespace (to handle SVG elements correctly)
+    ns = {'svg': 'http://www.w3.org/2000/svg'}
+
+    paths = []
+    for path in root.findall('.//svg:path', ns):
+        path_data = path.attrib['d']
+        points = convert_path_to_polygon(path_data, svg_width, svg_height, bbox)
+        if points:
+            paths.append(points)
     
-    print("Simplify the polygon")
-    # Simplify the polygon to remove minor differences
-    simplified = polygon.simplify(tolerance=0.000001, preserve_topology=True)
+    polygons = create_polygons_from_paths(paths)
     
-    print("Orient the polygon")
-    # Ensure the coordinates are in a consistent order
-    oriented = orient(simplified)
+    return polygons
+
+def convert_path_to_polygon(path_data, svg_width, svg_height, bbox):
+    min_x, min_y, max_x, max_y = bbox
+    paths = []
+    points = []
+    commands = path_data.split()
+    i = 0
+    while i < len(commands):
+        if commands[i] == 'M':  # Move to
+            if points:  # If there's an existing ring, finalize it
+                if len(points) > 2:
+                    points.append(points[0])  # Close the ring
+                    paths.append(points)
+                points = []
+            x, y = float(commands[i+1]), float(commands[i+2])
+            lon = min_x + (x / svg_width) * (max_x - min_x)
+            lat = min_y + (1 - (y / svg_height)) * (max_y - min_y)
+            points.append((lon, lat))
+            i += 3
+        elif commands[i] == 'L':  # Line to
+            x, y = float(commands[i+1]), float(commands[i+2])
+            lon = min_x + (x / svg_width) * (max_x - min_x)
+            lat = min_y + (1 - (y / svg_height)) * (max_y - min_y)
+            points.append((lon, lat))
+            i += 3
+        elif commands[i] == 'Z':  # Close path
+            if len(points) > 2:
+                points.append(points[0])  # Close the ring
+                paths.append(points)
+            points = []
+            i += 1
+        else:
+            i += 1
+
+    if points and len(points) > 2:
+        points.append(points[0])  # Close the ring
+        paths.append(points)
+
+    return paths
+
+def create_polygons_from_paths(paths, tolerance=1e-9, simplify_tolerance=1e-6):
+    unique_polygons = []
     
-    print("Round the coordinates")
-    # Round the coordinates for precision
-    rounded_coords = [(round(x, precision), round(y, precision)) for x, y in oriented.exterior.coords]
-    return rounded_coords
+    for path in paths:
+        if len(path) > 1:
+            # First ring is the exterior, the rest are holes
+            exterior = LinearRing(path[0])
+            holes = [LinearRing(hole) for hole in path[1:] if len(hole) > 3]  # Ensure holes are valid rings
+            polygon = Polygon(shell=exterior, holes=holes)
+        else:
+            # Only one ring, no holes
+            exterior = LinearRing(path[0])
+            polygon = Polygon(shell=exterior)
 
-def svg_to_shp(svg_path, shp_path, bbox, image_size, tolerance=6):
-    try:
-        # Parse the SVG file
-        tree = ET.parse(svg_path)
-        root = tree.getroot()
-        namespaces = {'svg': 'http://www.w3.org/2000/svg'}
+        # Simplify the polygon slightly to remove small variations
+        simplified_polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
 
-        # Create a new shapefile
-        with shapefile.Writer(shp_path, shapefile.POLYGON) as shp:
-            shp.field('bestand_id', 'N')
+        # Normalize the polygon by buffering with a small distance and then reversing the buffer
+        normalized_polygon = simplified_polygon.buffer(tolerance).buffer(-tolerance)
 
-            processed_polygons = set()
+        # Check if this normalized polygon is equal to any existing one
+        is_duplicate = any(existing_polygon.equals(normalized_polygon) for existing_polygon in unique_polygons)
+        
+        if not is_duplicate:
+            unique_polygons.append(normalized_polygon)
 
-            for i, element in enumerate(root.findall('.//svg:path', namespaces)):
-                d = element.attrib.get('d', '')
-                if d:
-                    print(f"Get coordinates for i: {i}")
-                    coordinates = parse_svg_path(d)
-                    if not coordinates:
-                        print(f"Failed to parse path {i}")
-                        continue
-                    
-                    print("Pixel to geo")
-                    geo_coords = pixel_to_geo(coordinates, bbox, image_size)
-                    if not geo_coords:
-                        print(f"Failed to transform coordinates for path {i}")
-                        continue
-                    
-                    print("Normalize polygon")
-                    # Normalize and simplify the polygon coordinates
-                    normalized_coords = normalize_polygon(geo_coords, precision=tolerance)
-                    if not normalized_coords:
-                        print(f"Failed to normalize coordinates for path {i}")
-                        continue
+    return unique_polygons
 
-                    print("Check for duplicates")
-                    polygon_tuple = tuple(normalized_coords)
-                    if polygon_tuple in processed_polygons:
-                        print(f"Duplicate polygon found for path {i}")
-                        continue
+def write_polygons_to_shapefile(polygons, shp_file_path):
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    print(f"Writing polygons to shapefile: {shp_file_path}")
+    data_source = driver.CreateDataSource(shp_file_path)
+    
+    spatial_ref = osr.SpatialReference()
+    spatial_ref.ImportFromEPSG(4326)
+    
+    layer = data_source.CreateLayer("layer", geom_type=ogr.wkbPolygon, srs=spatial_ref)
+    
+    field_name = ogr.FieldDefn("ID", ogr.OFTInteger)
+    layer.CreateField(field_name)
+    
+    for i, polygon in enumerate(polygons):
+        feature = ogr.Feature(layer.GetLayerDefn())
+        feature.SetField("ID", i + 1)
+        
+        wkt = polygon.wkt
+        geom = ogr.CreateGeometryFromWkt(wkt)
+        feature.SetGeometry(geom)
+        
+        layer.CreateFeature(feature)
+        feature = None
+        # Close and save the data source
+    data_source = None
+    
+    # Create a .prj file for the shapefile
+    create_prj_file(shp_file_path, spatial_ref)
 
-                    print("Create the polygon")
-                    # Define the polygon
-                    polygon = [geo_coords]
-                    shp.poly(polygon)
-                    shp.record(i)
-
-                    print("Add the polygon to the processed polygons")
-                    # Add the polygon to the set of processed polygons
-                    processed_polygons.add(polygon_tuple)
-
-        print("Write to shapefile")
-        with open(f"{shp_path.replace('.shp', '.prj')}", 'w') as prj:
-            prj.write(prj_content)
-
-        print(f"Shapefile created at {shp_path}")
-    except Exception as e:
-        print(f"Error converting SVG to SHP: {str(e)}")
-
-def fetch_wms_info(wms_url, params):
-    try:
-        url = f"{wms_url}?{urlencode(params)}"
-        response = requests.get(url)
-        return response.text.strip()
-    except Exception as e:
-        print(f"Error fetching WMS info: {str(e)}")
-        return ''
-def calculate_pixel_coordinates(bbox, width, height, point):
-    minx, miny, maxx, maxy = bbox
-    x, y = point.x, point.y
-    pixel_x = int((x - minx) / (maxx - minx) * width)
-    pixel_y = int((y - miny) / (maxy - miny) * height)
-    return pixel_x, pixel_y
-
+def create_prj_file(shp_file_path, spatial_ref):
+    # Write the .prj file
+    prj_file_path = shp_file_path.replace('.shp', '.prj')
+    with open(prj_file_path, 'w') as prj_file:
+        prj_file.write(spatial_ref.ExportToWkt())
+        
 def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapefile):
     try:
         with shapefile.Reader(shapefile_path) as shapefile_src:
@@ -176,120 +198,6 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
 def calculate_map_extent_bounds(multipolygon):
     envelope = multipolygon.GetEnvelope()  # Returns a tuple (minX, maxX, minY, maxY)
     return envelope
-
-# Function to convert pixel coordinates to geographic coordinates
-def pixel_to_geo(pixel_coords, bbox, image_size):
-    min_x, min_y, max_x, max_y = bbox
-    img_width, img_height = image_size
-
-    geo_coords = []
-    for x, y in pixel_coords:
-        x = float(x)
-        y = float(y)
-        img_width = float(img_width)
-        img_height = float(img_height)
-        
-        geo_x = min_x + (x / img_width) * (max_x - min_x)
-        geo_y = max_y - (y / img_height) * (max_y - min_y)
-        geo_coords.append((geo_x, geo_y))
-
-    return geo_coords
-
-import re
-
-# Function to parse SVG path data
-def parse_svg_path(path_data):
-    command_re = re.compile(r'([MmLlHhVvCcSsQqTtAaZz])|([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)')
-    
-    def consume_numbers(it, count):
-        return [float(next(it)[1]) for _ in range(count)]
-    
-    commands = command_re.findall(path_data)
-    command_iter = iter(commands)
-    current_pos = [0, 0]
-    coordinates = []
-    
-    try:
-        while True:
-            command = next(command_iter)
-            if command[0]:
-                cmd_type = command[0]
-            else:
-                continue
-
-            if cmd_type.upper() in 'ML':
-                while True:
-                    coords = consume_numbers(command_iter, 2)
-                    if cmd_type.islower():
-                        coords[0] += current_pos[0]
-                        coords[1] += current_pos[1]
-                    current_pos = coords
-                    coordinates.append(current_pos.copy())
-                    if command_re.match(' '.join([next(command_iter)[1] for _ in range(2)])) is None:
-                        break
-
-            elif cmd_type.upper() in 'HV':
-                while True:
-                    if cmd_type.upper() == 'H':
-                        x = float(next(command_iter)[1])
-                        if cmd_type.islower():
-                            x += current_pos[0]
-                        current_pos[0] = x
-                    else:
-                        y = float(next(command_iter)[1])
-                        if cmd_type.islower():
-                            y += current_pos[1]
-                        current_pos[1] = y
-                    coordinates.append(current_pos.copy())
-                    if command_re.match(next(command_iter)[1]) is None:
-                        break
-
-            elif cmd_type.upper() in 'CS':
-                while True:
-                    coords = consume_numbers(command_iter, 6)
-                    if cmd_type.islower():
-                        coords[0] += current_pos[0]
-                        coords[1] += current_pos[1]
-                        coords[2] += current_pos[0]
-                        coords[3] += current_pos[1]
-                        coords[4] += current_pos[0]
-                        coords[5] += current_pos[1]
-                    current_pos = coords[-2:]
-                    coordinates.append(current_pos.copy())
-                    if command_re.match(' '.join([next(command_iter)[1] for _ in range(6)])) is None:
-                        break
-
-            elif cmd_type.upper() in 'QT':
-                while True:
-                    coords = consume_numbers(command_iter, 4)
-                    if cmd_type.islower():
-                        coords[0] += current_pos[0]
-                        coords[1] += current_pos[1]
-                        coords[2] += current_pos[0]
-                        coords[3] += current_pos[1]
-                    current_pos = coords[-2:]
-                    coordinates.append(current_pos.copy())
-                    if command_re.match(' '.join([next(command_iter)[1] for _ in range(4)])) is None:
-                        break
-
-            elif cmd_type.upper() == 'A':
-                while True:
-                    coords = consume_numbers(command_iter, 7)
-                    if cmd_type.islower():
-                        coords[5] += current_pos[0]
-                        coords[6] += current_pos[1]
-                    current_pos = coords[-2:]
-                    coordinates.append(current_pos.copy())
-                    if command_re.match(' '.join([next(command_iter)[1] for _ in range(7)])) is None:
-                        break
-
-            elif cmd_type.upper() == 'Z':
-                coordinates.append(coordinates[0].copy())
-
-    except StopIteration:
-        pass
-    
-    return coordinates
 
 @app.route('/vectorize', methods=['POST'])
 def vectorize():
@@ -353,7 +261,10 @@ def vectorize():
 
     try:
         if onlyIntersect != 'true':
-            svg_to_shp(downloaded_svg_from_cut_path, shp_from_svg_cut_path, [min_x, min_y, max_x, max_y], (1024, 1024))
+            # Parse the SVG with the bounding box and image size and write to shapefile
+            polygons = parse_svg(downloaded_svg_from_cut_path, (1024, 1024), [min_x, min_y, max_x, max_y])
+            print(f"Number of unique polygons: {len(polygons)}")
+            write_polygons_to_shapefile(polygons, shp_from_svg_cut_path)
 
         # Perform intersection drectly with GeoJSON
         intersect_shapefile_with_geojson(shp_from_svg_cut_path, geojson_dict, save_intersected_geojson_shp_path)
