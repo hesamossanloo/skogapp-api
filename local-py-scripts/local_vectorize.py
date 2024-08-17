@@ -158,6 +158,7 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
 
             with shapefile.Writer(output_shapefile) as output:
                 output.fields = fields
+                intersection_count = 0  # Initialize the counter
 
                 for shape_rec in shapefile_src.shapeRecords():
                     try:
@@ -183,6 +184,7 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
                                 
                                 output.shape(intersection.__geo_interface__)
                                 output.record(*[shape_rec.record[field] for field in field_names])
+                                intersection_count += 1  # Increment the counter                                
                     except Exception as e:
                         print(f"Error processing shape record: {e}")
     except Exception as e:
@@ -193,6 +195,9 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
     with open(prj_path, 'w') as prj_file:
         prj_file.write(prj_content)
     print(f"Projection file saved at {prj_path}")
+    
+    # Print the number of features after intersection
+    print(f"Number of features after intersection: {intersection_count}")
                         
 # Function to calculate bounds of a MultiPolygon
 def calculate_map_extent_bounds(multipolygon):

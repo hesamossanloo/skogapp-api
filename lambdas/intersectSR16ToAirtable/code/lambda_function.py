@@ -113,17 +113,28 @@ def update_airtable_from_dict(data, table):
     # Create a mapping of Airtable field names to dictionary keys
     airtable_field_names = [field['name'] for field in airtable_fields]
     
+    # Collect records to be updated in a list
+    batch_records = []
+    
     # Iterate through each dictionary in the data list
     for row in data:
         bestand_id = row['bestand_id']
         if bestand_id in record_map:
-            record_id = record_map[bestand_id]
             # Prepare the data to update
             update_data = {key: value for key, value in row.items() if key in airtable_field_names and value is not None}
-            table.update(record_id, update_data)
-            print(f"Updated record with bestand_id: {bestand_id} with data: {update_data}")
+            batch_records.append({"id": record_map[bestand_id], "fields": update_data})
+            print(f"Prepared update for record with bestand_id: {bestand_id} with data: {update_data}")
         else:
             print(f"Record with bestand_id: {bestand_id} not found in Airtable")
+    
+    # Perform batch upsert
+    batch_size = 10  # Adjust the batch size as needed
+    for i in range(0, len(batch_records), batch_size):
+        batch = batch_records[i:i + batch_size]
+        print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
+        table.batch_upsert(batch, ['bestand_id'], replace=True)
+        
+
             
 def find_SR16_intersection(event):
     print("Finding SR16 intersection")

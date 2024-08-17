@@ -2,7 +2,7 @@ import boto3
 import shapefile
 import requests
 import xml.etree.ElementTree as ET
-from shapely.geometry import shape
+from shapely.geometry import Polygon, MultiPolygon, Point, shape
 from shapely.validation import make_valid
 from shapely.ops import transform
 import pyproj
@@ -56,7 +56,33 @@ def parse_xml_response(response_text):
         'teig_best_nr': feature.findtext('teig_best_nr', default='', namespaces=ns),
     }
     return attributes
+def get_query_point(geom):
+    """
+    Get a suitable point for querying the WMS service.
+    If the centroid fails, try the first vertex or other strategic points.
+    Handle both Polygon and MultiPolygon cases.
+    """
+    if isinstance(geom, Polygon):
+        # Directly use the polygon
+        centroid = geom.centroid
+        if geom.contains(centroid):
+            return centroid
+        
+        points_to_try = [centroid, geom.representative_point(), geom.exterior.interpolate(0.5, normalized=True)]
+        for point in points_to_try:
+            if geom.contains(point):
+                return point
 
+        return Point(geom.exterior.coords[0])  # Fallback to the first coordinate
+    
+    elif isinstance(geom, MultiPolygon):
+        # Use the largest polygon in the MultiPolygon
+        largest_polygon = max(geom.geoms, key=lambda p: p.area)
+        return get_query_point(largest_polygon)  # Recursively handle the largest polygon
+    
+    else:
+        raise ValueError("Unsupported geometry type")
+    
 def lambda_handler(event, context):
     # Get the object key from the S3 event
     #  print the event records with a text saying that
@@ -143,12 +169,11 @@ def lambda_handler(event, context):
             if area < 3480:
                 continue
 
-            centroid = geom.centroid
-            minx, miny, maxx, maxy = get_bbox(centroid)
-
-            # Calculate I, J values (relative pixel coordinates)
-            i = int((centroid.x - minx) / (maxx - minx) * width)
-            j = int((centroid.y - miny) / (maxy - miny) * height)
+            # In your loop where you build the GetFeatureInfo URL:
+            query_point = get_query_point(geom)
+            minx, miny, maxx, maxy = get_bbox(query_point)
+            i = int((query_point.x - minx) / (maxx - minx) * width)
+            j = int((query_point.y - miny) / (maxy - miny) * height)
 
             # Construct the GetFeatureInfo URL
             getfeatureinfo_url = (

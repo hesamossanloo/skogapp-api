@@ -3,7 +3,7 @@ import shapefile
 from flask import Flask, jsonify
 import requests
 import xml.etree.ElementTree as ET
-from shapely.geometry import shape
+from shapely.geometry import Polygon, MultiPolygon, Point, shape
 from shapely.validation import make_valid
 from shapely.ops import transform
 import pyproj
@@ -12,10 +12,10 @@ import pyproj
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define paths relative to the script's directory
-intersected_geojson_shp_path = os.path.join(script_dir, "outputs/vectorize/intersected_image.shp")
-intersected_geojson_prj_path = os.path.join(script_dir, "outputs/vectorize/intersected_image.prj")
-intersected_geojson_shp_w_info_path = os.path.join(script_dir, "outputs/vectorize/intersected_image_w_info.shp")
-intersected_geojson_prj_w_info_path = os.path.join(script_dir, "outputs/vectorize/intersected_image_w_info.prj")
+read_from_intersected_shp_path = os.path.join(script_dir, "outputs/featureInfo/intersected_image.shp")
+read_from_intersected_prj_path = os.path.join(script_dir, "outputs/featureInfo/intersected_image.prj")
+write_to_intersected_shp_w_info_path = os.path.join(script_dir, "outputs/featureInfo/intersected_image_w_info.shp")
+write_to_intersected_prj_w_info_path = os.path.join(script_dir, "outputs/featureInfo/intersected_image_w_info.prj")
 
 app = Flask(__name__)
 
@@ -49,13 +49,39 @@ def parse_xml_response(response_text):
         'teig_best_nr': feature.findtext('teig_best_nr', default='', namespaces=ns),
     }
     return attributes
+def get_query_point(geom):
+    """
+    Get a suitable point for querying the WMS service.
+    If the centroid fails, try the first vertex or other strategic points.
+    Handle both Polygon and MultiPolygon cases.
+    """
+    if isinstance(geom, Polygon):
+        # Directly use the polygon
+        centroid = geom.centroid
+        if geom.contains(centroid):
+            return centroid
+        
+        points_to_try = [centroid, geom.representative_point(), geom.exterior.interpolate(0.5, normalized=True)]
+        for point in points_to_try:
+            if geom.contains(point):
+                return point
+
+        return Point(geom.exterior.coords[0])  # Fallback to the first coordinate
+    
+    elif isinstance(geom, MultiPolygon):
+        # Use the largest polygon in the MultiPolygon
+        largest_polygon = max(geom.geoms, key=lambda p: p.area)
+        return get_query_point(largest_polygon)  # Recursively handle the largest polygon
+    
+    else:
+        raise ValueError("Unsupported geometry type")
 
 @app.route('/featureInfo', methods=['POST'])
 def featureInfo():
     try:
         # Read the shapefile
-        sf = shapefile.Reader(intersected_geojson_shp_path)
-        writer = shapefile.Writer(intersected_geojson_shp_w_info_path)
+        sf = shapefile.Reader(read_from_intersected_shp_path)
+        writer = shapefile.Writer(write_to_intersected_shp_w_info_path)
         
         # Copy the fields from the original shapefile
         writer.fields = sf.fields[1:]  # Skip deletion field
@@ -97,12 +123,11 @@ def featureInfo():
             if area < 3480:
                 continue
 
-            centroid = geom.centroid
-            minx, miny, maxx, maxy = get_bbox(centroid)
-
-            # Calculate I, J values (relative pixel coordinates)
-            i = int((centroid.x - minx) / (maxx - minx) * width)
-            j = int((centroid.y - miny) / (maxy - miny) * height)
+            # In your loop where you build the GetFeatureInfo URL:
+            query_point = get_query_point(geom)
+            minx, miny, maxx, maxy = get_bbox(query_point)
+            i = int((query_point.x - minx) / (maxx - minx) * width)
+            j = int((query_point.y - miny) / (maxy - miny) * height)
 
             # Construct the GetFeatureInfo URL
             getfeatureinfo_url = (
@@ -134,11 +159,11 @@ def featureInfo():
         writer.close()
         
         # Read the content of the original .prj file
-        with open(intersected_geojson_prj_path, 'r') as prj_file:
+        with open(read_from_intersected_prj_path, 'r') as prj_file:
             prj_content = prj_file.read()
 
         # Write the content to the new .prj file at local_out_prj_path
-        with open(intersected_geojson_prj_w_info_path, 'w') as out_prj_file:
+        with open(write_to_intersected_prj_w_info_path, 'w') as out_prj_file:
             out_prj_file.write(prj_content)
 
         return jsonify({'message': 'Feature info request successful and shapefile updated.'})
