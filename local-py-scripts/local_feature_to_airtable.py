@@ -4,7 +4,7 @@ from pyairtable import Api
 
 # Get the directory of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
-shp_path = os.path.join(script_dir, "outputs/featureInfo/intersected_image_w_info.shp")
+shp_path = os.path.join(script_dir, "outputs/featureInfo/0ymOEIru0rXJhtpOIVsovYOBjIE3_vector_w_HK_infos.shp")
 if not os.path.exists(shp_path):
     print(f"File {shp_path} does not exist")
     exit(1)
@@ -15,7 +15,6 @@ forestID = shp_path.split('/')[-1].split('_')[0]
 AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv('AIRTABLE_PERSONAL_ACCESS_TOKEN')
 AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID')
 # build the table name with forestID
-forestID = 'SNNVdbJF1Mf5ztivUO1WN2iSGN92'
 TABLE_NAME = f'{forestID}_bestandsdata'
 api = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN)
 base = api.base(AIRTABLE_BASE_ID)
@@ -161,9 +160,13 @@ for record in records:
     # Add the mapped record to the batch
     batch_records.append({"fields": mapped_record})
     
+    
 # Insert or update the records in the Airtable table in batches
 batch_size = 10  # Adjust the batch size as needed
 for i in range(0, len(batch_records), batch_size):
     batch = batch_records[i:i + batch_size]
     print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
-    table.batch_upsert(batch, ['bestand_id', 'DN'], replace=True)
+    try:
+        table.batch_upsert(batch, ['bestand_id'], replace=True)
+    except Exception as e:
+        print(f"Failed to upsert batch {i // batch_size + 1}: {e}")

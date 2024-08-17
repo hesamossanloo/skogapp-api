@@ -151,7 +151,6 @@ def download_svg_from_s3(bucket, key, download_path):
     s3.download_file(bucket, key, download_path)
 
 def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapefile):
-    print(f"Intersecting shapefile with GeoJSON: {shapefile_path}")
     try:
         with shapefile.Reader(shapefile_path) as shapefile_src:
             print(f"Shapefile fields: {shapefile_src.fields}")
@@ -159,7 +158,7 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
             field_names = [field[0] for field in fields]
 
             with shapefile.Writer(output_shapefile) as output:
-                print(f"Trying to write the intersection to: {output_shapefile}")
+                print(f"Writing the intersection to: {output_shapefile}")
                 output.fields = fields
                 print("Processing shape records...")
                 for shape_rec in shapefile_src.shapeRecords():
@@ -247,7 +246,7 @@ def vectorize(geojson_dict, forestID):
         intersected_shx_path = "/tmp/intersection_image.shx"
         intersected_prj_path = "/tmp/intersection_image.prj"
         
-        print("Intersecting shapefile with GeoJSON...")
+        print("Intersecting shapefile with GeoJSON:", downloaded_shp_path)
         intersect_shapefile_with_geojson(downloaded_shp_path, geojson_dict, intersected_shp_path)
 
         print("Uploading intersection shapefile to S3...")

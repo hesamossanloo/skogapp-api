@@ -221,8 +221,8 @@ def lambda_handler(event, context):
             for i in range(0, len(batch_records), batch_size):
                 batch = batch_records[i:i + batch_size]
                 print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
-                table.batch_upsert(batch, ['bestand_id', 'DN'], replace=True)
-            print(f"Successfully upsrted all batches to the table {TABLE_NAME}")   
+                table.batch_upsert(batch, ['bestand_id'], replace=True)
+            print(f"Successfully upserted all batches to the table {TABLE_NAME}")   
         except Exception as e:
             print(f"Error connecting to Airtable: {e}")
             return
