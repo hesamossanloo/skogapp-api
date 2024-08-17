@@ -115,19 +115,28 @@ def update_airtable_from_dict(data, table):
     # Create a mapping of Airtable field names to dictionary keys
     airtable_field_names = [field['name'] for field in airtable_fields]
     
+    # Collect records to be updated in a list
+    batch_records = []
+    
     # Iterate through each dictionary in the data list
     for row in data:
         bestand_id = row['bestand_id']
         if bestand_id in record_map:
-            record_id = record_map[bestand_id]
             # Prepare the data to update
             update_data = {key: value for key, value in row.items() if key in airtable_field_names and value is not None}
-            table.update(record_id, update_data)
-            print(f"Updated record with bestand_id: {bestand_id}")
+            batch_records.append({"id": record_map[bestand_id], "fields": update_data})
+            print(f"Prepared update for record with bestand_id: {bestand_id} with data: {update_data}")
         else:
             print(f"Record with bestand_id: {bestand_id} not found in Airtable")
+    
+    # Perform batch upsert
+    batch_size = 10  # Adjust the batch size as needed
+    for i in range(0, len(batch_records), batch_size):
+        batch = batch_records[i:i + batch_size]
+        print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
+        table.batch_upsert(batch, ['bestand_id'], replace=False)
             
-@main.route('/findSR16Intersection', methods=['POST'])
+@main.route('/SR16Intersection', methods=['POST'])
 def find_SR16_intersection():
     print("Finding SR16 intersection")
     # Parse the GeoJSON from the request
@@ -172,7 +181,7 @@ def find_SR16_intersection():
             conn.close()
     # Load the vector layers
     # Read shapefile using fiona
-    with fiona.open('/Users/hesam.ossanloo/Downloads/AkselForest1_vector_w_HK_infos.shp') as shp:
+    with fiona.open('/Users/hesam.ossanloo/Downloads/0ymOEIru0rXJhtpOIVsovYOBjIE3_vector_w_HK_infos.shp') as shp:
         shp_crs = CRS(shp.crs) if shp.crs else CRS.from_epsg(4326)  # Assuming WGS84 CRS if not defined
         HK_SHP_Geometries = [shape(feature['geometry']) for feature in shp]
         HK_SHP_Attributes = [{**feature['properties'], 'geometry': shape(feature['geometry'])} for feature in shp]
@@ -211,6 +220,7 @@ def find_SR16_intersection():
                 'srgrflate', 'srhoydeo', 'srtrean', 'srtrean_ge8', 'srtrean_ge10', 
                 'srtrean_ge16', 'srlai', 'srkronedek']
 
+    print("Aggregating the required values...")
     # Aggregate the required values
     aggregated_data = {}
     for intersection in intersections:
@@ -241,24 +251,24 @@ def find_SR16_intersection():
     print(f"Processing table for forestID: {forestID}")
     # build the table name with forestID
     TABLE_NAME = f'{forestID}_bestandsdata'
-    # try:
-    #     print("Connecting to Airtable... to Base ID: ", AIRTABLE_BASE_ID)
-    #     api = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN)
-    #     base = api.base(AIRTABLE_BASE_ID)
-    #     tables = base.schema().tables
-    #     table_exists = any(table.name == TABLE_NAME for table in tables)
+    try:
+        print("Connecting to Airtable... to Base ID: ", AIRTABLE_BASE_ID)
+        api = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN)
+        base = api.base(AIRTABLE_BASE_ID)
+        tables = base.schema().tables
+        table_exists = any(table.name == TABLE_NAME for table in tables)
         
-    #     if table_exists:
-    #         print(f"Table {TABLE_NAME} exists. Proceeding with updates...")
-    #         table = base.table(TABLE_NAME)
-    #         update_airtable_from_dict(final_data, table)
-    #     else:
-    #         print(f"Table {TABLE_NAME} does not exist in the Airtable")
-    #         raise Exception(f"Table {TABLE_NAME} does not exist in the Airtable")
+        if table_exists:
+            print(f"Table {TABLE_NAME} exists. Proceeding with updates...")
+            table = base.table(TABLE_NAME)
+            update_airtable_from_dict(final_data, table)
+        else:
+            print(f"Table {TABLE_NAME} does not exist in the Airtable")
+            raise Exception(f"Table {TABLE_NAME} does not exist in the Airtable")
 
-    #     print(f"Table is ready. Upserting the data to Airtable...")
-    # except Exception as e:
-    #     print(f"Error connecting to Airtable: {e}")
+        print(f"Table is ready. Upserting the data to Airtable...")
+    except Exception as e:
+        print(f"Error connecting to Airtable: {e}")
     
     # Save the result to a CSV file
     with open(f'{forestID}_SR16-HK-intersection_Flask.csv', 'w') as csvfile:

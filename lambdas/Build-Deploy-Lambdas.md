@@ -66,7 +66,7 @@ python /var/task/lambda_function.py event.json
 docker cp lambda:/tmp/package.zip SkogAppModelToAirtable-V1.zip
 docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V6.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureInfo-V6.zip
-docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V6.zip
+docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V7.zip
 docker cp lambda:/tmp/package.zip SkogAppHKCut-V3.zip
 docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V15.zip
 docker stop lambda
