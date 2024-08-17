@@ -4,7 +4,7 @@ from pyairtable import Api
 
 # Get the directory of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
-shp_path = os.path.join(script_dir, "outputs/vectorize/intersected_image_w_info.shp")
+shp_path = os.path.join(script_dir, "outputs/featureInfo/intersected_image_w_info.shp")
 if not os.path.exists(shp_path):
     print(f"File {shp_path} does not exist")
     exit(1)
@@ -15,6 +15,7 @@ forestID = shp_path.split('/')[-1].split('_')[0]
 AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv('AIRTABLE_PERSONAL_ACCESS_TOKEN')
 AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID')
 # build the table name with forestID
+forestID = 'SNNVdbJF1Mf5ztivUO1WN2iSGN92'
 TABLE_NAME = f'{forestID}_bestandsdata'
 api = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN)
 base = api.base(AIRTABLE_BASE_ID)
@@ -129,6 +130,9 @@ field_names = [field[0] for field in sf.fields[1:]]
 # get the shapefile records and first record
 records = sf.records()
 
+# Collect records to batch upsert
+batch_records = []
+
 # Process each record in the shapefile
 for record in records:
     # Initialize the mapped_record with empty values
@@ -154,14 +158,12 @@ for record in records:
                 except ValueError:
                     mapped_record[key] = None  # Handle the case where value cannot be converted to float
 
-    # Insert or update the record in the Airtable table
-    table_records = table.all()
-    if len(table_records) == 0:
-        print(f"Inserting record to the table {TABLE_NAME}: {mapped_record['bestand_id']}")
-        table.create(mapped_record)
-    else:
-        print(f"Updating record in the table {TABLE_NAME}: {mapped_record['bestand_id']}")
-        if mapped_record['bestand_id'] == '':
-            print(f"Skipping record with DN: {mapped_record['DN']} because of empty bestand_id")
-            continue
-        table.batch_upsert([{"fields": mapped_record}], ['bestand_id', 'DN'], replace=True)
+    # Add the mapped record to the batch
+    batch_records.append({"fields": mapped_record})
+    
+# Insert or update the records in the Airtable table in batches
+batch_size = 10  # Adjust the batch size as needed
+for i in range(0, len(batch_records), batch_size):
+    batch = batch_records[i:i + batch_size]
+    print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
+    table.batch_upsert(batch, ['bestand_id', 'DN'], replace=True)

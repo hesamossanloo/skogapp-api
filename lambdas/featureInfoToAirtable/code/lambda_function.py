@@ -173,6 +173,9 @@ def lambda_handler(event, context):
             # get the shapefile records and first record
             records = sf.records()
             
+            # Collect records to batch upsert
+            batch_records = []
+            
             # Process each record in the shapefile
             processed_bestand_ids = []
             for record in records:
@@ -200,26 +203,26 @@ def lambda_handler(event, context):
                                     mapped_record[key] = round(float(value), precision)
                             except ValueError:
                                 mapped_record[key] = None  # Handle the case where value cannot be converted to float
+                
+                # Perform checks before adding to batch
+                if mapped_record['bestand_id'] == '':
+                    print(f"Skipping record with DN: {mapped_record['DN']} because of empty bestand_id")
+                    continue
+                if mapped_record['bestand_id'] in processed_bestand_ids:
+                    print(f"Skipping record with bestand_id: {mapped_record['bestand_id']} as it is already processed")
+                    continue
+                
+                # Add the mapped record to the batch
+                batch_records.append({"fields": mapped_record})
+                processed_bestand_ids.append(mapped_record['bestand_id'])
 
-                # Insert or update the record in the Airtable table
-                table_records = table.all()
-                if len(table_records) == 0:
-                    print(f"Inserting record to the table {TABLE_NAME}: {mapped_record['bestand_id']}")
-                    table.create(mapped_record)
-                    processed_bestand_ids.append(mapped_record['bestand_id'])
-                else:
-                    if mapped_record['bestand_id'] == '':
-                        print(f"Skipping record with DN: {mapped_record['DN']} because of empty bestand_id")
-                        continue
-                    if mapped_record['bestand_id'] not in processed_bestand_ids:
-                        print(f"{mapped_record['bestand_id']} not in processed_bestand_ids: {processed_bestand_ids}")
-                        print(f"Upserting record in the table {TABLE_NAME}: {mapped_record['bestand_id']}, with data: {mapped_record}")
-                        table.batch_upsert([{"fields": mapped_record}], ['bestand_id', 'DN'], replace=True)
-                        processed_bestand_ids.append(mapped_record['bestand_id'])
-                        print(f"Added {mapped_record['bestand_id']} to processed_bestand_ids. Current processed_bestand_ids: {processed_bestand_ids}")
-                    else:
-                        print(f"Skipping record with bestand_id: {mapped_record['bestand_id']} as it is already processed")
-                    
+            # Insert or update the records in the Airtable table in batches
+            batch_size = 10  # Adjust the batch size as needed
+            for i in range(0, len(batch_records), batch_size):
+                batch = batch_records[i:i + batch_size]
+                print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
+                table.batch_upsert(batch, ['bestand_id', 'DN'], replace=True)
+            print(f"Successfully upsrted all batches to the table {TABLE_NAME}")   
         except Exception as e:
             print(f"Error connecting to Airtable: {e}")
             return
