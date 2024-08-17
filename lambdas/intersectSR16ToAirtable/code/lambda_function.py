@@ -132,9 +132,7 @@ def update_airtable_from_dict(data, table):
     for i in range(0, len(batch_records), batch_size):
         batch = batch_records[i:i + batch_size]
         print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
-        table.batch_upsert(batch, ['bestand_id'], replace=True)
-        
-
+        table.batch_upsert(batch, ['bestand_id'], replace=False)
             
 def find_SR16_intersection(event):
     print("Finding SR16 intersection")
@@ -206,9 +204,6 @@ def find_SR16_intersection(event):
         HK_SHP_Geometries = [transformer.transform(geom) for geom in HK_SHP_Geometries]
 
     # Print geometries to ensure correct data
-    print("HK_SHP Geometries: ", HK_SHP_Geometries)
-    print("SR16_intersect_GeoJSON Geometries: ", SR16_intersect_GeoJSON_Features)
-
     print("Processing the intersection results...")
     # Perform the spatial join to calculate the overlap
     intersections = []
