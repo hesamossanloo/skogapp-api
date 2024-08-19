@@ -524,7 +524,7 @@ Resources:
   SkogAppHKFeatureAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureAirtable-V8.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureAirtable-V9.zip
       Description: 'Get the Feature Info SHP file n S3 and creates an Airtable for the user'
       Handler: lambda_function.lambda_handler
       FunctionName: SkogAppHKFeatureAirtable
@@ -593,7 +593,7 @@ Resources:
   SkogAppSR16IntersectionToAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppSR16IntersectionToAirtable-V7.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppSR16IntersectionToAirtable-V8.zip
       Description: 'Intersect the SR16 data with the given GeoJSON and send the data to Airtable'
       FunctionName: SkogAppSR16IntersectionToAirtable
       MemorySize: 128

@@ -205,9 +205,14 @@ def lambda_handler(event, context):
                                 mapped_record[key] = None  # Handle the case where value cannot be converted to float
                 
                 # Perform checks before adding to batch
+                # Check if teig_best_nr is null and use DN for bestand_id if necessary
                 if mapped_record['bestand_id'] == '':
-                    print(f"Skipping record with DN: {mapped_record['DN']} because of empty bestand_id")
-                    continue
+                    if 'DN' in mapped_record and mapped_record['DN']:
+                        mapped_record['bestand_id'] = mapped_record['DN']
+                        print(f"Using DN value for bestand_id: {mapped_record['bestand_id']}")
+                    else:
+                        print(f"Skipping record with empty bestand_id and no DN value")
+                        continue
                 if mapped_record['bestand_id'] in processed_bestand_ids:
                     print(f"Skipping record with bestand_id: {mapped_record['bestand_id']} as it is already processed")
                     continue
