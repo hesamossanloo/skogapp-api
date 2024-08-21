@@ -1,144 +1,193 @@
+import json
+import requests
 import os
-from osgeo import ogr, osr
-from shapely.geometry import Polygon, LinearRing
-import xml.etree.ElementTree as ET
+import pandas as pd
+import Bio_growth
+import numpy as np
 
-def parse_svg(svg_file, image_size, bbox):
-    svg_width, svg_height = image_size
-    # Parse the SVG file
-    tree = ET.parse(svg_file)
-    root = tree.getroot()
+# Airtable configuration
+AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv('AIRTABLE_PERSONAL_ACCESS_TOKEN')
+AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID')
 
-    # SVG namespace (to handle SVG elements correctly)
-    ns = {'svg': 'http://www.w3.org/2000/svg'}
-
-    paths = []
-    for path in root.findall('.//svg:path', ns):
-        path_data = path.attrib['d']
-        points = convert_path_to_polygon(path_data, svg_width, svg_height, bbox)
-        if points:
-            paths.append(points)
+def model(event):
+    print("Running the model...")
+    data = json.loads(event['body'])
+    print("Received body:", data)
+    yield_requirement = float(data.get('yield_requirement', 0.03) ) # Default to 0.03 if 'yield_requirement' is not provided
+    forestID = data.get('forestID')
     
-    polygons = create_polygons_from_paths(paths)
+    # if forestID is not found, the function will not proceed
+    if not forestID:
+        airtableResponse = {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'Missing forestID'})
+        }
+        return add_cors_headers(airtableResponse)
+    # Airtable configuration
+    TABLE_NAME = f'{forestID}_bestandsdata'
+    AIRTABLE_API_URL = f'https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{TABLE_NAME}'
     
-    return polygons
+    # Fetch data from Airtable
+    print("Fetching data from Airtable for Table name: ", TABLE_NAME)
+    airtable_data = fetch_airtable_data(AIRTABLE_API_URL)
+    df_airtable = pd.DataFrame(airtable_data)
+    print(f"Fetched {len(df_airtable)} records from Airtable.")
 
-def convert_path_to_polygon(path_data, svg_width, svg_height, bbox):
-    min_x, min_y, max_x, max_y = bbox
-    paths = []
-    points = []
-    commands = path_data.split()
-    i = 0
-    while i < len(commands):
-        if commands[i] == 'M':  # Move to
-            if points:  # If there's an existing ring, finalize it
-                if len(points) > 2:
-                    points.append(points[0])  # Close the ring
-                    paths.append(points)
-                points = []
-            x, y = float(commands[i+1]), float(commands[i+2])
-            lon = min_x + (x / svg_width) * (max_x - min_x)
-            lat = min_y + (1 - (y / svg_height)) * (max_y - min_y)
-            points.append((lon, lat))
-            i += 3
-        elif commands[i] == 'L':  # Line to
-            x, y = float(commands[i+1]), float(commands[i+2])
-            lon = min_x + (x / svg_width) * (max_x - min_x)
-            lat = min_y + (1 - (y / svg_height)) * (max_y - min_y)
-            points.append((lon, lat))
-            i += 3
-        elif commands[i] == 'Z':  # Close path
-            if len(points) > 2:
-                points.append(points[0])  # Close the ring
-                paths.append(points)
-            points = []
-            i += 1
+    # Process the DataFrame using Bio_growth.main
+    print("Running Bio_growth model...")
+    df_bestander = Bio_growth.main(df=df_airtable, yield_requirement=yield_requirement)
+    print("Bio_growth model completed.")
+
+    # Replace missing values with 0
+    df_bestander.fillna(0, inplace=True)
+
+    # Convert DataFrame to a dictionary or JSON serializable format
+    result = df_bestander.to_dict(orient='records')
+
+    # Get existing records from Airtable
+    print("Fetching existing records from Airtable...")
+    existing_records = get_existing_records(AIRTABLE_API_URL)
+    print(f"Fetched {len(existing_records)} existing records from Airtable.")
+
+    # Prepare batches of records to be sent
+    records_to_update = []
+    records_to_create = []
+    unique_updates = {}
+    for record in result:
+        bestand_id = record.get('bestand_id')
+        if bestand_id in existing_records:
+            unique_updates[bestand_id] = {'id': existing_records[bestand_id], 'fields': record}
         else:
-            i += 1
+            records_to_create.append({'fields': record})
 
-    if points and len(points) > 2:
-        points.append(points[0])  # Close the ring
-        paths.append(points)
+    # Ensure unique updates only
+    records_to_update = list(unique_updates.values())
 
-    return paths
-
-def create_polygons_from_paths(paths, tolerance=1e-9, simplify_tolerance=1e-6):
-    unique_polygons = []
-    
-    for path in paths:
-        if len(path) > 1:
-            # First ring is the exterior, the rest are holes
-            exterior = LinearRing(path[0])
-            holes = [LinearRing(hole) for hole in path[1:] if len(hole) > 3]  # Ensure holes are valid rings
-            polygon = Polygon(shell=exterior, holes=holes)
+    batch_size = 10
+    print("Updating records in batches...")
+    for i in range(0, len(records_to_update), batch_size):
+        batch = records_to_update[i:i + batch_size]
+        airtableResponse = batch_update_airtable_records(batch, AIRTABLE_API_URL)
+        if airtableResponse.status_code in [200, 201]:
+            updated_ids = [record['fields']['bestand_id'] for record in batch]
+            print(f"Updated batch of {len(batch)} records: {updated_ids}")
         else:
-            # Only one ring, no holes
-            exterior = LinearRing(path[0])
-            polygon = Polygon(shell=exterior)
+            print(f"Failed batch update: {batch}")
+            response = {
+                'statusCode': airtableResponse.status_code,
+                'body': json.dumps({'error': 'Failed to update records to Airtable', 'details': airtableResponse.json()})
+            }
+            return add_cors_headers(response)
 
-        # Simplify the polygon slightly to remove small variations
-        simplified_polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
+    print("Creating records in batches...")
+    for i in range(0, len(records_to_create), batch_size):
+        batch = records_to_create[i:i + batch_size]
+        airtableResponse = batch_create_airtable_records(batch, AIRTABLE_API_URL)
+        if airtableResponse.status_code in [200, 201]:
+            created_ids = [record['fields']['bestand_id'] for record in batch]
+            print(f"Created batch of {len(batch)} records: {created_ids}")
+        else:
+            print(f"Failed batch create")
+            response = {
+                'statusCode': airtableResponse.status_code,
+                'body': json.dumps({'error': 'Failed to create records to Airtable', 'details': airtableResponse.json()})
+            }
+            return add_cors_headers(response)
 
-        # Normalize the polygon by buffering with a small distance and then reversing the buffer
-        normalized_polygon = simplified_polygon.buffer(tolerance).buffer(-tolerance)
+    print("Data update completed.")
+    response = {
+        'statusCode': 200,
+        'body': json.dumps({'message': 'Data update completed'})
+    }
+    return add_cors_headers(response)
 
-        # Check if this normalized polygon is equal to any existing one
-        is_duplicate = any(existing_polygon.equals(normalized_polygon) for existing_polygon in unique_polygons)
-        
-        if not is_duplicate:
-            unique_polygons.append(normalized_polygon)
+def fetch_airtable_data(airtableURL):
+    headers = {
+        'Authorization': f'Bearer {AIRTABLE_PERSONAL_ACCESS_TOKEN}',
+    }
+    params = {
+        'pageSize': 100
+    }
+    all_records = []
+    while True:
+        response = requests.get(airtableURL, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        records = data['records']
+        all_records.extend(record['fields'] for record in records)
+        if 'offset' in data:
+            params['offset'] = data['offset']
+        else:
+            break
+    return all_records
 
-    return unique_polygons
+def get_existing_records(airtableURL):
+    headers = {
+        'Authorization': f'Bearer {AIRTABLE_PERSONAL_ACCESS_TOKEN}',
+    }
+    params = {
+        'pageSize': 100
+    }
+    records = {}
+    while True:
+        response = requests.get(airtableURL, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        for record in data['records']:
+            fields = record.get('fields', {})
+            bestand_id = fields.get('bestand_id')
+            if bestand_id:
+                records[bestand_id] = record['id']
+        if 'offset' in data:
+            params['offset'] = data['offset']
+        else:
+            break
+    return records
 
-def write_polygons_to_shapefile(polygons, shp_file_path):
-    driver = ogr.GetDriverByName("ESRI Shapefile")
-    data_source = driver.CreateDataSource(shp_file_path)
-    
-    spatial_ref = osr.SpatialReference()
-    spatial_ref.ImportFromEPSG(4326)
-    
-    layer = data_source.CreateLayer("layer", geom_type=ogr.wkbPolygon, srs=spatial_ref)
-    
-    field_name = ogr.FieldDefn("ID", ogr.OFTInteger)
-    layer.CreateField(field_name)
-    
-    for i, polygon in enumerate(polygons):
-        feature = ogr.Feature(layer.GetLayerDefn())
-        feature.SetField("ID", i + 1)
-        
-        wkt = polygon.wkt
-        geom = ogr.CreateGeometryFromWkt(wkt)
-        feature.SetGeometry(geom)
-        
-        layer.CreateFeature(feature)
-        feature = None
-        # Close and save the data source
-    data_source = None
-    
-    # Create a .prj file for the shapefile
-    create_prj_file(shp_file_path, spatial_ref)
+def batch_update_airtable_records(records, airtableURL):
+    headers = {
+        'Authorization': f'Bearer {AIRTABLE_PERSONAL_ACCESS_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+    data = {'records': records}
+    response = requests.patch(airtableURL, json=data, headers=headers)
+    return response
 
-def create_prj_file(shp_file_path, spatial_ref):
-    # Write the .prj file
-    prj_file_path = shp_file_path.replace('.shp', '.prj')
-    with open(prj_file_path, 'w') as prj_file:
-        prj_file.write(spatial_ref.ExportToWkt())
+def batch_create_airtable_records(records, airtableURL):
+    headers = {
+        'Authorization': f'Bearer {AIRTABLE_PERSONAL_ACCESS_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+    data = {'records': records}
+    response = requests.post(airtableURL, json=data, headers=headers)
+    return response
 
-# Example usage
-script_dir = os.path.dirname(os.path.abspath(__file__))
-shp_file_name = 'output1.shp'
-shp_file_path = os.path.join(script_dir, f"outputs/vectorize/{shp_file_name}")
+def add_cors_headers(response):
+    response['headers'] = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
+    }
+    return response
 
-svg_file_name = 'HOuJBvE84aPWtDJCym19nt1sUep1_HK_image_cut'
-svg_path = os.path.join(script_dir, f"outputs/vectorize/{svg_file_name}.svg")
+def lambda_handler(event, context):
+    if event['httpMethod'] == 'OPTIONS':
+        response = {
+            'statusCode': 200,
+            'body': json.dumps({})
+        }
+        return add_cors_headers(response)
+    elif event['httpMethod'] == 'POST':
+        return model(event)
+    else:
+        response = {
+            'statusCode': 405,
+            'body': json.dumps({'error': 'Method not allowed'})
+        }
+        return add_cors_headers(response)
 
-image_size = (1024, 1024)
-# 59.91293019437413,11.67197776005428,59.93019418583705,11.692333790821172
-# [min_x, min_y, max_x, max_y]
-bbox = [11.684437282975667, 59.92796113169163, 11.749939392271136, 59.95933664178191]
-
-# Parse the SVG with the bounding box and image size
-polygons = parse_svg(svg_path, image_size, bbox)
-print(f"Number of unique polygons: {len(polygons)}")
-write_polygons_to_shapefile(polygons, shp_file_path)
-print(f"Shapefile created at: {shp_file_path}")
+event = {
+    'httpMethod': 'POST',
+    'body': json.dumps({'yield_requirement': 0.03, 'forestID': 'xyoLZbElc5XRbcshW5G4P9urfEF3'})
+}
+model(event)

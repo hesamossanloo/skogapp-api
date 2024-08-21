@@ -15,6 +15,7 @@ import os
 # import pandas as pd
 import fiona
 from shapely.geometry import shape
+from shapely.validation import explain_validity
 from pyproj import CRS, Transformer
     
 import psycopg2
@@ -96,10 +97,15 @@ def query_fragment(geom, cursor):
         SELECT 'FeatureCollection' AS type, array_to_json(array_agg(f)) AS features
         FROM (
             SELECT 'Feature' AS type,
-                   ST_AsGeoJSON(ST_Transform(ST_Intersection(public.sr16.geom, geojson.geom), 4326))::json AS geometry,
-                   row_to_json((SELECT l FROM (SELECT public.sr16.*) AS l)) AS properties
-            FROM public.sr16, geojson
-            WHERE ST_Intersects(public.sr16.geom, geojson.geom)
+                   ST_AsGeoJSON(ST_Transform(
+                       CASE
+                           WHEN ST_Within(public.sr16_v2.shape, geojson.geom) THEN public.sr16_v2.shape
+                           WHEN ST_Within(geojson.geom, public.sr16_v2.shape) THEN geojson.geom
+                           ELSE ST_Intersection(public.sr16_v2.shape, geojson.geom)
+                       END, 4326))::json AS geometry,
+                   row_to_json((SELECT l FROM (SELECT public.sr16_v2.*) AS l)) AS properties
+            FROM public.sr16_v2, geojson
+            WHERE ST_Intersects(public.sr16_v2.shape, geojson.geom)
         ) AS f
     ) AS fc;
     """
@@ -108,6 +114,8 @@ def query_fragment(geom, cursor):
 
 # Function to update Airtable rows based on a list of dictionaries
 def update_airtable_from_dict(data, table):
+    # Debug: Print the data list length
+    print(f"Number of records to update: {len(data)}")
     # Fetch all records from the table
     records = table.all()
     record_map = {record['fields']['bestand_id']: record['id'] for record in records if 'bestand_id' in record['fields']}
@@ -179,9 +187,14 @@ def find_SR16_intersection():
             cursor.close()
         if conn:
             conn.close()
+    
+    # export the result to a GeoJSON file
+    with open(f'{forestID}_SR16-HK-intersection_Flask.geojson', 'w') as f:
+        json.dump(SR16_intersection_results, f)
+        
     # Load the vector layers
     # Read shapefile using fiona
-    with fiona.open('/Users/hesam.ossanloo/Downloads/T8wZcrAfvTWmw717yaHOQJLdcXk2_vector_w_HK_infos.shp') as shp:
+    with fiona.open('/Users/hesam.ossanloo/Downloads/xyoLZbElc5XRbcshW5G4P9urfEF3_vector_w_HK_infos.shp') as shp:
         shp_crs = CRS(shp.crs) if shp.crs else CRS.from_epsg(4326)  # Assuming WGS84 CRS if not defined
         HK_SHP_Geometries = [shape(feature['geometry']) for feature in shp]
         HK_SHP_Attributes = [{**feature['properties'], 'geometry': shape(feature['geometry'])} for feature in shp]
@@ -192,24 +205,48 @@ def find_SR16_intersection():
     SR16_intersect_GeoJSON_Features = [shape(feature['geometry']) for feature in SR16_intersection_results['features']]
     SR16_intersect_GeoJSON_Attributes = [{**feature['properties'], 'geometry': shape(feature['geometry'])} for feature in SR16_intersection_results['features']]
 
+    # Debug: Print the number of features in SR16_intersect_GeoJSON_Features
+    print(f"Number of features in SR16_intersect_GeoJSON_Features: {len(SR16_intersect_GeoJSON_Features)}")
+    
     # Assuming GeoJSON features are in WGS84 CRS
     geojson_crs = CRS.from_epsg(4326)
+
+    # Debug: Check if their CRS is the same
+    print(f"CRS of HK_SHP_Geometries: {shp_crs}")
+    print(f"CRS of SR16_intersect_GeoJSON_Features: {geojson_crs}")
 
     # Ensure both layers are in the same CRS
     if shp_crs != geojson_crs:
         transformer = Transformer.from_crs(shp_crs, geojson_crs, always_xy=True)
         HK_SHP_Geometries = [transformer.transform(geom) for geom in HK_SHP_Geometries]
-
     # Perform the spatial join to calculate the overlap
     intersections = []
     for hk_geom, hk_attr in zip(HK_SHP_Geometries, HK_SHP_Attributes):
+        # Debug: Print hk_geom details
+        print(f"Processing hk_geom with bestand_id {hk_attr['bestand_id']}")
+        
+        # Check if hk_geom is valid
+        if not hk_geom.is_valid:
+            print(f"Invalid hk_geom with bestand_id {hk_attr['bestand_id']}: {explain_validity(hk_geom)}")
+            continue
+        
         for sr_geom, sr_attr in zip(SR16_intersect_GeoJSON_Features, SR16_intersect_GeoJSON_Attributes):
+            # Check if sr_geom is valid
+            if not sr_geom.is_valid:
+                print(f"Invalid sr_geom: {explain_validity(sr_geom)}")
+                continue
+            # Debug print the geometry details for HK and SR only if the bestand_id is 61 and SR gid is 5375469
+            if hk_attr['bestand_id'] == 61 and sr_attr['gid'] == 5375469:
+                print(f"HK Geometry: {hk_geom}")
+                print(f"SR Geometry: {sr_geom}")
+            
             if hk_geom.intersects(sr_geom):
                 intersection = hk_geom.intersection(sr_geom)
                 intersection_area = intersection.area
                 overlap_percentage = (intersection_area / hk_geom.area) * 100
                 intersection_attributes = {**hk_attr, **sr_attr, 'intersection_area': intersection_area, 'overlap_percentage': overlap_percentage}
                 intersections.append(intersection_attributes)
+                print(f"Intersection found for bestand_id {hk_attr['bestand_id']} with intersection area {intersection_area} and overlap percentage {overlap_percentage}% with sr.gid {sr_attr['gid']}")
 
     # List of attributes to be averaged
     attributes = ['srvolmb', 'srvolub', 'srbmo', 'srbmu', 'srhoydem', 'srdiam', 'srdiam_ge8', 
