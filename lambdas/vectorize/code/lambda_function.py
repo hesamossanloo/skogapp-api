@@ -16,6 +16,13 @@ s3_folder_vectorize = 'SkogAppHKVectorize/'  # S3 folder
 # Create a projection file
 prj_content = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]"""
 
+def log(forestID, message):
+    if forestID:
+        print(f"forestID: {forestID} - {message}")
+    else:
+        forestID = "unknown"
+        print(f"forestID: {forestID} - {message}")
+
 def add_cors_headers(response):
     response['headers'] = {
         'Access-Control-Allow-Origin': '*',
@@ -113,7 +120,6 @@ def create_polygons_from_paths(paths, tolerance=1e-9, simplify_tolerance=1e-6):
 
 def write_polygons_to_shapefile(polygons, shp_file_path):
     driver = ogr.GetDriverByName("ESRI Shapefile")
-    print(f"Writing polygons to shapefile: {shp_file_path}")
     data_source = driver.CreateDataSource(shp_file_path)
     
     spatial_ref = osr.SpatialReference()
@@ -146,21 +152,25 @@ def create_prj_file(shp_file_path, spatial_ref):
     with open(prj_file_path, 'w') as prj_file:
         prj_file.write(spatial_ref.ExportToWkt())
         
-def download_svg_from_s3(bucket, key, download_path):
-    print(f"Downloading SVG file from S3: {key}")
-    s3.download_file(bucket, key, download_path)
+def download_svg_from_s3(bucket, key, download_path, forestID):
+    log(forestID, f"Downloading SVG file from S3: {key}")
+    try:
+        s3.download_file(bucket, key, download_path)
+    except Exception as e:
+        log(forestID, f"Error downloading SVG file: {e}")
+        raise e
 
-def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapefile):
+def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapefile, forestID):
     try:
         with shapefile.Reader(shapefile_path) as shapefile_src:
-            print(f"Shapefile fields: {shapefile_src.fields}")
+            log(forestID, f"Shapefile fields: {shapefile_src.fields}")
             fields = shapefile_src.fields[1:]  # Skip the DeletionFlag field
             field_names = [field[0] for field in fields]
 
             with shapefile.Writer(output_shapefile) as output:
-                print(f"Writing the intersection to: {output_shapefile}")
+                log(forestID, f"Writing the intersection to: {output_shapefile}")
                 output.fields = fields
-                print("Processing shape records...")
+                log(forestID, "Processing shape records...")
                 for shape_rec in shapefile_src.shapeRecords():
                     try:
                         shape_geom = shape(shape_rec.shape.__geo_interface__)
@@ -188,15 +198,15 @@ def intersect_shapefile_with_geojson(shapefile_path, geojson_dict, output_shapef
                                 output.shape(intersection.__geo_interface__)
                                 output.record(*[shape_rec.record[field] for field in field_names])
                     except Exception as e:
-                        print(f"Error processing shape record: {e}")
+                        log(forestID, f"Error processing shape record: {e}")
     except Exception as e:
-        print(f"Error reading shapefile: {e}")
+        log(forestID, f"Error reading shapefile: {e}")
     
     # Create the .prj file
     prj_path = output_shapefile.replace('.shp', '.prj')
     with open(prj_path, 'w') as prj_file:
         prj_file.write(prj_content)
-    print(f"Projection file saved at {prj_path}")
+    log(forestID, f"Projection file saved at {prj_path}")
 
 def calculate_bounds(multipolygon):
     envelope = multipolygon.GetEnvelope()
@@ -212,7 +222,7 @@ def vectorize(geojson_dict, forestID):
         ogr_geom = ogr.CreateGeometryFromJson(geometry_json)
         
         if ogr_geom is None:
-            print("Failed to create geometry from GeoJSON.")
+            log(forestID, "Failed to create geometry from GeoJSON.")
             response = {
                 'statusCode': 400,
                 'body': json.dumps({'message': 'Failed to create geometry from GeoJSON.'})
@@ -225,31 +235,31 @@ def vectorize(geojson_dict, forestID):
         min_y, max_y = min(min_y, bounds[2]), max(max_y, bounds[3])
     
     combined_bounds_STR = f"{min_y},{min_x},{max_y},{max_x}"
-    print(f"Combined Bounds Str: {combined_bounds_STR}")
+    log(forestID, f"Combined bounds: {combined_bounds_STR}")
     
     downloaded_svg_path = "/tmp/downloaded_image.svg"
     s3_key_cut = f"{s3_folder_cut}{forestID}_HK_image_cut.svg"
     
     try:
-        download_svg_from_s3(bucket_name, s3_key_cut, downloaded_svg_path)
-        print(f"Downloaded SVG file from S3: {s3_key_cut}")
+        download_svg_from_s3(bucket_name, s3_key_cut, downloaded_svg_path, forestID)
+        log(forestID, f"Downloaded SVG file from S3: {s3_key_cut}")
         downloaded_shp_path = "/tmp/downloaded_image.shp"
-        print(f"Parsing SVG file: {downloaded_svg_path}")
+        log(forestID, f"Parsing SVG file: {downloaded_svg_path}")
         # Parse the SVG with the bounding box and image size and write to shapefile
         polygons = parse_svg(downloaded_svg_path, (1024, 1024), [min_x, min_y, max_x, max_y])
-        print(f"Parsed! Number of unique polygons: {len(polygons)}")
+        log(forestID, f"Number of unique polygons: {len(polygons)}")
         
-        print(f"Writing polygons to shapefile: {downloaded_shp_path}")
+        log(forestID, f"Writing polygons to shapefile: {downloaded_shp_path}")
         write_polygons_to_shapefile(polygons, downloaded_shp_path)
         intersected_shp_path = "/tmp/intersection_image.shp"
         intersected_dbf_path = "/tmp/intersection_image.dbf"
         intersected_shx_path = "/tmp/intersection_image.shx"
         intersected_prj_path = "/tmp/intersection_image.prj"
         
-        print("Intersecting shapefile with GeoJSON:", downloaded_shp_path)
-        intersect_shapefile_with_geojson(downloaded_shp_path, geojson_dict, intersected_shp_path)
+        log(forestID, f"Intersecting shapefile with GeoJSON: {downloaded_shp_path}")
+        intersect_shapefile_with_geojson(downloaded_shp_path, geojson_dict, intersected_shp_path, forestID)
 
-        print("Uploading intersection shapefile to S3...")
+        log(forestID, "Uploading intersection shapefile to S3...")
         s3_key_output_shp = f"{s3_folder_vectorize}{forestID}_vectorized_HK.shp"
         s3_key_output_dbf = f"{s3_folder_vectorize}{forestID}_vectorized_HK.dbf"
         s3_key_output_shx = f"{s3_folder_vectorize}{forestID}_vectorized_HK.shx"
@@ -264,7 +274,7 @@ def vectorize(geojson_dict, forestID):
         s3_url_shx = f"https://{bucket_name}.s3.amazonaws.com/{s3_key_output_shx}"
         s3_url_prj = f"https://{bucket_name}.s3.amazonaws.com/{s3_key_output_prj}"
         
-        print(f"Intersection shapefile saved at {s3_url_shp}")
+        log(forestID, f"Intersection shapefile saved at {s3_url_shp}")
         response = {
             'statusCode': 200,
             'body': json.dumps({
@@ -277,7 +287,7 @@ def vectorize(geojson_dict, forestID):
         }
         return add_cors_headers(response)
     except Exception as e:
-        print(f"Error during SVG processing: {str(e)}")
+        log(forestID, f"Error during SVG processing: {str(e)}")
         response = {
             'statusCode': 500,
             'body': json.dumps({'message': 'SVG processing failed.', 'error': str(e)})
@@ -293,8 +303,14 @@ def handle_api_event(event):
         return add_cors_headers(response)
     elif event['httpMethod'] == 'POST':
         geojson_dict = json.loads(event['body'])
+        if not geojson_dict:
+            response = {
+                'statusCode': 400,
+                'body': json.dumps({'message': 'Invalid GeoJSON data'})
+            }
+            return add_cors_headers(response)
+            
         forestID = geojson_dict.get('forestID')
-        
         if not forestID:
             response = {
                 'statusCode': 400,
@@ -302,8 +318,9 @@ def handle_api_event(event):
             }
             return add_cors_headers(response)
         
+        log(forestID, "Received API request.")
         if geojson_dict['type'] != 'FeatureCollection':
-            print("The provided GeoJSON data is not a FeatureCollection.")
+            log(forestID, "Invalid GeoJSON data. Must be a FeatureCollection.")
             response = {
                 'statusCode': 400,
                 'body': json.dumps({'message': 'Invalid GeoJSON data. Must be a FeatureCollection.'})
@@ -321,10 +338,22 @@ def handle_sqs_event(event):
     for record in event['Records']:
         # Process each SQS message here
         message_body = record['body']
-        print(f"Processing SQS message")
-        geojson_dict = json.loads(message_body)
-        forestID = geojson_dict.get('forestID')
+        if not message_body:
+            response = {
+                'statusCode': 400,
+                'body': json.dumps({'message': 'Missing message body'})
+            }
+            return add_cors_headers(response)
         
+        geojson_dict = json.loads(message_body)
+        if not geojson_dict:
+            response = {
+                'statusCode': 400,
+                'body': json.dumps({'message': 'Invalid message body'})
+            }
+            return add_cors_headers(response)
+
+        forestID = geojson_dict.get('forestID')
         if not forestID:
             response = {
                 'statusCode': 400,
@@ -332,8 +361,9 @@ def handle_sqs_event(event):
             }
             return add_cors_headers(response)
         
+        log(forestID, "Processing SQS message.")
         if geojson_dict['type'] != 'FeatureCollection':
-            print("The provided GeoJSON data is not a FeatureCollection.")
+            log(forestID, "Invalid GeoJSON data. Must be a FeatureCollection.")
             response = {
                 'statusCode': 400,
                 'body': json.dumps({'message': 'Invalid GeoJSON data. Must be a FeatureCollection.'})
@@ -345,12 +375,10 @@ def handle_sqs_event(event):
 def lambda_handler(event, context):
     # Check if the event is from API Gateway
     if 'httpMethod' in event:
-        print(f"Received API Gateway event: {event['httpMethod']}")
         return handle_api_event(event)
     
     # Check if the event is from SQS
     elif 'Records' in event and event['Records'][0]['eventSource'] == 'aws:sqs':
-        print(f"Received SQS event: {event['Records'][0]['eventSource']}")
         return handle_sqs_event(event)
     
     else:

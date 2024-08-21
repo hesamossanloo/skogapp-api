@@ -26,6 +26,13 @@ local_out_shx_path = '/tmp/vector_w_info.shx'
 local_out_dbf_path = '/tmp/vector_w_info.dbf'
 local_out_prj_path = '/tmp/vector_w_info.prj'
 
+def log(forestID, message):
+    if forestID:
+        print(f"forestID: {forestID} - {message}")
+    else:
+        forestID = "unknown"
+        print(f"forestID: {forestID} - {message}")
+        
 # Function to get the bounding box of a point with a small buffer
 def get_bbox(point, buffer=0.001):
     minx, miny, maxx, maxy = point.buffer(buffer).bounds
@@ -107,19 +114,19 @@ def lambda_handler(event, context):
         if not forestID:
             print('No valid forestID found in the event.')
             return
-        print(f"Processing forestID: {forestID}")
+        log(forestID, "Starting the feature info function.")
         
         try:
             s3_client.head_object(Bucket=bucket_name, Key=f"{S3_object_key}")
         except ClientError as e:
             if e.response['Error']['Code'] == '404':
-                print(f"Object {S3_object_key} does not exist.")
+                log(forestID, f"Object {S3_object_key} does not exist.")
                 continue
             else:
                 raise
         
         # Download the shapefile components from S3
-        print("Downloading shapefile components from S3...", f"{received_S3_folder_name}/{forest_file_name_no_ext}.shp/shx/dbf/prj")
+        log(forestID, f"Downloading shapefile components from S3: {received_S3_folder_name}/{forest_file_name_no_ext}.shp/shx/dbf/prj")
         s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.shp", local_shp_path)
         s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.shx", local_shx_path)
         s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.dbf", local_dbf_path)
@@ -213,12 +220,12 @@ def lambda_handler(event, context):
             out_prj_file.write(prj_content)
             
         # Upload the new shapefile components to S3
-        print("Uploading intersection with Feature infos shapefile to S3...")
+        log(forestID, f"Uploading intersection with Feature infos shapefile to S3: {s3_folder_feature_info}{forestID}_vector_w_HK_infos.shp/shx/dbf/prj")
         s3_client.upload_file(local_out_shp_path, bucket_name, f"{s3_folder_feature_info}{forestID}_vector_w_HK_infos.shp")
         s3_client.upload_file(local_out_dbf_path, bucket_name, f"{s3_folder_feature_info}{forestID}_vector_w_HK_infos.dbf")
         s3_client.upload_file(local_out_shx_path, bucket_name, f"{s3_folder_feature_info}{forestID}_vector_w_HK_infos.shx")
         s3_client.upload_file(local_out_prj_path, bucket_name, f"{s3_folder_feature_info}{forestID}_vector_w_HK_infos.prj")
 
-        print('Feature info request successful and shapefile updated.')
+        log(forestID, "Feature info request successful and shapefile updated.")
 
     print('No more valid file found in the event.')
