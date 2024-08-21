@@ -6,6 +6,7 @@ from shapely.geometry import shape
 from pyproj import CRS, Transformer
 import psycopg2
 from pyairtable import Api
+from shapely.validation import explain_validity
 
 # Initialize S3 client
 s3 = boto3.client('s3')
@@ -74,6 +75,13 @@ airtable_fields = [
     {'name': 'volume_at_maturity_without_bark', 'type': 'number', 'options': {'precision': 8}}
 ]
 
+def log(forestID, message):
+    if forestID:
+        print(f"forestID: {forestID} - {message}")
+    else:
+        forestID = "unknown"
+        print(f"forestID: {forestID} - {message}")
+        
 def add_cors_headers(response):
     response['headers'] = {
         'Access-Control-Allow-Origin': '*',
@@ -94,10 +102,15 @@ def query_fragment(geom, cursor):
         SELECT 'FeatureCollection' AS type, array_to_json(array_agg(f)) AS features
         FROM (
             SELECT 'Feature' AS type,
-                   ST_AsGeoJSON(ST_Transform(ST_Intersection(public.sr16.geom, geojson.geom), 4326))::json AS geometry,
-                   row_to_json((SELECT l FROM (SELECT public.sr16.*) AS l)) AS properties
-            FROM public.sr16, geojson
-            WHERE ST_Intersects(public.sr16.geom, geojson.geom)
+                   ST_AsGeoJSON(ST_Transform(
+                       CASE
+                           WHEN ST_Within(public.sr16_v2.shape, geojson.geom) THEN public.sr16_v2.shape
+                           WHEN ST_Within(geojson.geom, public.sr16_v2.shape) THEN geojson.geom
+                           ELSE ST_Intersection(public.sr16_v2.shape, geojson.geom)
+                       END, 4326))::json AS geometry,
+                   row_to_json((SELECT l FROM (SELECT public.sr16_v2.*) AS l)) AS properties
+            FROM public.sr16_v2, geojson
+            WHERE ST_Intersects(public.sr16_v2.shape, geojson.geom)
         ) AS f
     ) AS fc;
     """
@@ -105,7 +118,7 @@ def query_fragment(geom, cursor):
     return cursor.fetchone()[0]
 
 # Function to update Airtable rows based on a list of dictionaries
-def update_airtable_from_dict(data, table):
+def update_airtable_from_dict(data, table, forestID):
     # Fetch all records from the table
     records = table.all()
     record_map = {record['fields']['bestand_id']: record['id'] for record in records if 'bestand_id' in record['fields']}
@@ -123,29 +136,35 @@ def update_airtable_from_dict(data, table):
             # Prepare the data to update
             update_data = {key: value for key, value in row.items() if key in airtable_field_names and value is not None}
             batch_records.append({"id": record_map[bestand_id], "fields": update_data})
-            print(f"Prepared update for record with bestand_id: {bestand_id} with data: {update_data}")
+            log(forestID, f"Prepared update for record with bestand_id: {bestand_id} with data: {update_data}")
         else:
-            print(f"Record with bestand_id: {bestand_id} not found in Airtable")
+            log(forestID, f"Record with bestand_id: {bestand_id} not found in Airtable")
     
     # Perform batch upsert
     batch_size = 10  # Adjust the batch size as needed
     for i in range(0, len(batch_records), batch_size):
         batch = batch_records[i:i + batch_size]
-        print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
+        log(forestID, f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
         table.batch_upsert(batch, ['bestand_id'], replace=False)
             
 def find_SR16_intersection(event):
     print("Finding SR16 intersection")
     # Parse the GeoJSON from the request
     geojson_dict = json.loads(event['body'])
-    forestID = geojson_dict.get('forestID')
+    if not geojson_dict:
+        response = {
+            'statusCode': 400,
+            'body': json.dumps({'message': 'Missing GeoJSON data'})
+        }
+        return add_cors_headers(response)
     
+    forestID = geojson_dict.get('forestID')
     # if forestID is not found, the function will not proceed
     if not forestID:
         print('No valid forestID found in the event.')
         return
         
-    print("Building connection to PostGIS!")
+    log(forestID, "Building connection to PostGIS!")
     conn = None
     cursor = None
     
@@ -159,14 +178,14 @@ def find_SR16_intersection(event):
             "features": []
         }
 
-        print("Querying the database...")
+        log(forestID, "Querying the database")
         for feature in geojson_dict['features']:
             geom = feature['geometry']
             result = query_fragment(geom, cursor)
             if result and 'features' in result and result['features'] is not None:
                 SR16_intersection_results['features'].extend(result['features'])
     except Exception as e:
-        print(f"Database error: {e}")
+        log(forestID, f"Database error: {e}")
         response = {
             'statusCode': 500,
             'body': json.dumps({'error': 'Database query failed'}),
@@ -178,13 +197,13 @@ def find_SR16_intersection(event):
         if conn:
             conn.close()
     
-    print("Downloading the vector files from S3...")
+    log(forestID, "Downloading the vector files from S3")
     # Download vector files with feature infos from S3
     s3.download_file(bucket_name, f'{s3_folder_feature_info}{forestID}_vector_w_HK_infos.shp', local_shp)
     s3.download_file(bucket_name, f'{s3_folder_feature_info}{forestID}_vector_w_HK_infos.shx', local_shx)
     s3.download_file(bucket_name, f'{s3_folder_feature_info}{forestID}_vector_w_HK_infos.dbf', local_dbf)
 
-    print("Processing the vector files...")
+    log(forestID, "Processing the vector files")
     # Read shapefile using fiona
     with fiona.open(local_shp) as shp:
         shp_crs = CRS(shp.crs) if shp.crs else CRS.from_epsg(4326)  # Assuming WGS84 CRS if not defined
@@ -204,11 +223,20 @@ def find_SR16_intersection(event):
         HK_SHP_Geometries = [transformer.transform(geom) for geom in HK_SHP_Geometries]
 
     # Print geometries to ensure correct data
-    print("Processing the intersection results...")
+    log(forestID, "Processing the intersection results")
     # Perform the spatial join to calculate the overlap
     intersections = []
     for hk_geom, hk_attr in zip(HK_SHP_Geometries, HK_SHP_Attributes):
+        # Check if hk_geom is valid
+        if not hk_geom.is_valid:
+            log(forestID, f"Invalid hk_geom with bestand_id {hk_attr['bestand_id']}: {explain_validity(hk_geom)}")
+            continue
+        
         for sr_geom, sr_attr in zip(SR16_intersect_GeoJSON_Features, SR16_intersect_GeoJSON_Attributes):
+            # Check if sr_geom is valid
+            if not sr_geom.is_valid:
+                log(forestID, f"Invalid sr_geom: {explain_validity(sr_geom)}")
+                continue
             if hk_geom.intersects(sr_geom):
                 intersection = hk_geom.intersection(sr_geom)
                 intersection_area = intersection.area
@@ -221,7 +249,7 @@ def find_SR16_intersection(event):
                 'srgrflate', 'srhoydeo', 'srtrean', 'srtrean_ge8', 'srtrean_ge10', 
                 'srtrean_ge16', 'srlai', 'srkronedek']
 
-    print("Aggregating the required values...")
+    log(forestID, "Aggregating the required values")
     # Aggregate the required values
     aggregated_data = {}
     for intersection in intersections:
@@ -251,26 +279,26 @@ def find_SR16_intersection(event):
     # Rename the column teig_best_ to bestand_id
     final_data = [{'bestand_id': teig_best_, **data} for teig_best_, data in aggregated_data.items()]
 
-    print(f"Processing table for forestID: {forestID}")
+    log(forestID, f"Processing table for forestID: {forestID}") 
     # build the table name with forestID
     TABLE_NAME = f'{forestID}_bestandsdata'
     try:
-        print("Connecting to Airtable... to Base ID: ", AIRTABLE_BASE_ID)
+        log(forestID, f"Connecting to Airtable... to Base ID: {AIRTABLE_BASE_ID}")
         api = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN)
         base = api.base(AIRTABLE_BASE_ID)
         tables = base.schema().tables
         table_exists = any(table.name == TABLE_NAME for table in tables)
         
         if table_exists:
-            print(f"Table {TABLE_NAME} exists. Proceeding with updates...")
+            log(forestID, f"Table {TABLE_NAME} exists. Proceeding with updates...")
             table = base.table(TABLE_NAME)
-            update_airtable_from_dict(final_data, table)
+            update_airtable_from_dict(final_data, table, forestID)
         else:
-            print(f"Table {TABLE_NAME} does not exist in the Airtable")
+            log(forestID, f"Table {TABLE_NAME} does not exist in the Airtable")
             raise Exception(f"Table {TABLE_NAME} does not exist in the Airtable")
 
     except Exception as e:
-        print(f"Error connecting to Airtable: {e}")
+        log(forestID, f"Error connecting to Airtable: {e}")
         response = {
             'statusCode': 500,
             'body': json.dumps({'message': 'Error connecting to Airtable', 'error': str(e)})
@@ -290,14 +318,12 @@ def find_SR16_intersection(event):
             
 def lambda_handler(event, context):
     if event['httpMethod'] == 'OPTIONS':
-        print(f"Received API Gateway event: {event['httpMethod']}")
         response = {
             'statusCode': 200,
             'body': json.dumps({})
         }
         return add_cors_headers(response)
     elif event['httpMethod'] == 'POST':
-        print(f"Received API Gateway event: {event['httpMethod']}")
         return find_SR16_intersection(event)
     else:
         response = {

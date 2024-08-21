@@ -99,7 +99,13 @@ airtable_fields = [
     {'name': 'volume_at_maturity_without_bark', 'type': 'number', 'options': {'precision': 8}},
     {'name': 'yield_requirement', 'type': 'number', 'options': {'precision': 1}},
 ]
-
+def log(forestID, message):
+    if forestID:
+        print(f"forestID: {forestID} - {message}")
+    else:
+        forestID = "unknown"
+        print(f"forestID: {forestID} - {message}")
+        
 def lambda_handler(event, context):
     # Get the object key from the S3 event
     #  print the event records with a text saying that
@@ -124,26 +130,26 @@ def lambda_handler(event, context):
         if not forestID:
             print('No valid forestID found in the event.')
             return
-        print(f"Processing table for forestID: {forestID}")
+        log(forestID, f"Processing table for forestID: {forestID}")
         # build the table name with forestID
         TABLE_NAME = f'{forestID}_bestandsdata'
         try:
             s3_client.head_object(Bucket=bucket_name, Key=f"{S3_object_key}")
         except ClientError as e:
             if e.response['Error']['Code'] == '404':
-                print(f"Object {S3_object_key} does not exist.")
+                log(forestID, f"Object {S3_object_key} does not exist.")
                 continue
             else:
                 raise
         
         # Download the shapefile components from S3
-        print("Downloading shapefile components from S3...", f"{received_S3_folder_name}/{forest_file_name_no_ext}.shp/shx/dbf/prj")
+        log(forestID, f"Downloading shapefile components from S3: {received_S3_folder_name}/{forest_file_name_no_ext}.shp/shx/dbf/prj")
         s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.shp", local_shp_path)
         s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.shx", local_shx_path)
         s3_client.download_file(bucket_name, f"{received_S3_folder_name}/{forest_file_name_no_ext}.dbf", local_dbf_path)
 
         try:
-            print("Connecting to Airtable... to Base ID: ", AIRTABLE_BASE_ID)
+            log(forestID, f"Connecting to Airtable... to Base ID: {AIRTABLE_BASE_ID}")
             api = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN)
             base = api.base(AIRTABLE_BASE_ID)
             # check if the table exists in the Airtable
@@ -154,16 +160,16 @@ def lambda_handler(event, context):
             if table_exists:
                 table = base.table(TABLE_NAME)
             else:
-                print(f"Table {TABLE_NAME} does not exist in the Airtable")
+                log(forestID, f"Creating table {TABLE_NAME} in the Airtable")
                 # create the table
-                print(f"Creating table {TABLE_NAME} in the Airtable")
+                log(forestID, f"Creating table {TABLE_NAME} in the Airtable")
                 table = base.create_table(TABLE_NAME, airtable_fields)
-                print(f"Table {TABLE_NAME} created in the Airtable")
+                log(forestID, f"Table {TABLE_NAME} created in the Airtable")
             if table is None:
-                print(f"Table {TABLE_NAME} does not exist in the Airtable and couldn't create it either!")
+                log(forestID, f"Table {TABLE_NAME} does not exist in the Airtable and couldn't create it either!")
                 return
             
-            print(f"Table is ready. Now Processing shapefile: {local_shp_path}")
+            log(forestID, f"Processing shapefile: {local_shp_path}")
             # open the shapefile
             sf = shapefile.Reader(local_shp_path)
             
@@ -209,12 +215,12 @@ def lambda_handler(event, context):
                 if mapped_record['bestand_id'] == '':
                     if 'DN' in mapped_record and mapped_record['DN']:
                         mapped_record['bestand_id'] = mapped_record['DN']
-                        print(f"Using DN value for bestand_id: {mapped_record['bestand_id']}")
+                        log(forestID, f"Using DN value for bestand_id: {mapped_record['bestand_id']}")
                     else:
-                        print(f"Skipping record with empty bestand_id and no DN value")
+                        log(forestID, f"Skipping record with empty bestand_id and no DN value")
                         continue
                 if mapped_record['bestand_id'] in processed_bestand_ids:
-                    print(f"Skipping record with bestand_id: {mapped_record['bestand_id']} as it is already processed")
+                    log(forestID, f"Skipping record with bestand_id: {mapped_record['bestand_id']} as it is already processed")
                     continue
                 
                 # Add the mapped record to the batch
@@ -225,11 +231,11 @@ def lambda_handler(event, context):
             batch_size = 10  # Adjust the batch size as needed
             for i in range(0, len(batch_records), batch_size):
                 batch = batch_records[i:i + batch_size]
-                print(f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
+                log(forestID, f"Upserting batch {i // batch_size + 1}: {len(batch)} records")
                 table.batch_upsert(batch, ['bestand_id'], replace=False)
-            print(f"Successfully upserted all batches to the table {TABLE_NAME}")   
+            log(forestID, f"Successfully upserted all batches to the table {TABLE_NAME}")
         except Exception as e:
-            print(f"Error connecting to Airtable: {e}")
+            log(forestID, f"Error connecting to Airtable: {e}")
             return
             
     print('No more valid file found in the event.')

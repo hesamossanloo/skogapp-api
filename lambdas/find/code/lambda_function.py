@@ -13,7 +13,13 @@ conn_params = {
     'host': os.getenv('POSTGIS_HOST'),
     'port': 5432,
 }
-
+def log(forestID, message):
+    if forestID:
+        print(f"forestID: {forestID} - {message}")
+    else:
+        forestID = "unknown"
+        print(f"forestID: {forestID} - {message}")
+        
 def create_query(inputs):
     kommunenummer = inputs.get('kommunenummer')
     matrikkelnummertekst_list = inputs.get('matrikkelnummertekst')
@@ -46,7 +52,6 @@ def add_cors_headers(response):
 def findForest(event):
     data = json.loads(event['body'])
     inputs = data.get('inputs', {})
-    print("Filtering features with inputs:", inputs)
     layer_name = 'teig'
     forestID = inputs.get('forestID')
     if not forestID:
@@ -55,8 +60,9 @@ def findForest(event):
             'body': json.dumps({'error': 'Missing forestID'})
         }
         return add_cors_headers(response)
+    log(forestID, f"Filtering features with inputs: {inputs}")
     query_condition = create_query(inputs)
-    print("Query condition:", query_condition)
+    log(forestID, f"Query condition: {query_condition}")
     if query_condition is None:
         response = {
             'statusCode': 400,
@@ -66,16 +72,16 @@ def findForest(event):
     conn = None
     cursor = None
     try:
-        print("Connecting to database with dbname: ", conn_params['dbname'])
+        log(forestID, f"Connecting to database with dbname: {conn_params['dbname']}")
         conn = psycopg2.connect(**conn_params)
         cursor = conn.cursor()
-        print("Connected to database")
+        log(forestID, "Connected to database")
         sql_query = f"SELECT ST_AsGeoJSON(geom) AS geojson FROM {layer_name} WHERE {query_condition}"
         cursor.execute(sql_query)
         rows = cursor.fetchall()
-        print("Rows fetched: %s", len(rows))
+        log(forestID, f"Rows fetched: {len(rows)}")
     except Exception as e:
-        print(f"Database error: {e}")
+        log(forestID, f"Database error: {e}")
         response = {
             'statusCode': 500,
             'body': json.dumps({'error': 'Database query failed'})

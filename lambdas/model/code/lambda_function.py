@@ -9,13 +9,26 @@ import numpy as np
 AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv('AIRTABLE_PERSONAL_ACCESS_TOKEN')
 AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID')
 
+def log(forestID, message):
+    if forestID:
+        print(f"forestID: {forestID} - {message}")
+    else:
+        forestID = "unknown"
+        print(f"forestID: {forestID} - {message}")
+        
 def model(event):
     print("Running the model...")
     data = json.loads(event['body'])
-    print("Received body:", data)
+    if not data:
+        print("Received empty body.")
+        response = {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'Missing body'})
+        }
+        return add_cors_headers(response)
     yield_requirement = float(data.get('yield_requirement', 0.03) ) # Default to 0.03 if 'yield_requirement' is not provided
-    forestID = data.get('forestID')
     
+    forestID = data.get('forestID')
     # if forestID is not found, the function will not proceed
     if not forestID:
         airtableResponse = {
@@ -23,20 +36,21 @@ def model(event):
             'body': json.dumps({'error': 'Missing forestID'})
         }
         return add_cors_headers(airtableResponse)
+    log(forestID, f"Received body: {data}")
     # Airtable configuration
     TABLE_NAME = f'{forestID}_bestandsdata'
     AIRTABLE_API_URL = f'https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{TABLE_NAME}'
     
     # Fetch data from Airtable
-    print("Fetching data from Airtable for Table name: ", TABLE_NAME)
+    log(forestID, f"Fetching data from Airtable for Table name: {TABLE_NAME}")
     airtable_data = fetch_airtable_data(AIRTABLE_API_URL)
     df_airtable = pd.DataFrame(airtable_data)
-    print(f"Fetched {len(df_airtable)} records from Airtable.")
+    log(forestID, f"Fetched {len(df_airtable)} records from Airtable.")
 
     # Process the DataFrame using Bio_growth.main
-    print("Running Bio_growth model...")
-    df_bestander = Bio_growth.main(df=df_airtable, yield_requirement=yield_requirement)
-    print("Bio_growth model completed.")
+    log(forestID, f"Running Bio_growth model with yield requirement: {yield_requirement}")
+    df_bestander = Bio_growth.main(df=df_airtable, yield_requirement=yield_requirement, forestID=forestID)
+    log(forestID, f"Bio_growth model completed.")
 
     # Replace missing values with 0
     df_bestander.fillna(0, inplace=True)
@@ -45,9 +59,9 @@ def model(event):
     result = df_bestander.to_dict(orient='records')
 
     # Get existing records from Airtable
-    print("Fetching existing records from Airtable...")
+    log(forestID, f"Fetching existing records from Airtable for Table name: {TABLE_NAME}")
     existing_records = get_existing_records(AIRTABLE_API_URL)
-    print(f"Fetched {len(existing_records)} existing records from Airtable.")
+    log(forestID, f"Fetched {len(existing_records)} existing records from Airtable.")
 
     # Prepare batches of records to be sent
     records_to_update = []
@@ -64,37 +78,37 @@ def model(event):
     records_to_update = list(unique_updates.values())
 
     batch_size = 10
-    print("Updating records in batches...")
+    log(forestID, f"Updating records in batches...")
     for i in range(0, len(records_to_update), batch_size):
         batch = records_to_update[i:i + batch_size]
         airtableResponse = batch_update_airtable_records(batch, AIRTABLE_API_URL)
         if airtableResponse.status_code in [200, 201]:
             updated_ids = [record['fields']['bestand_id'] for record in batch]
-            print(f"Updated batch of {len(batch)} records: {updated_ids}")
+            log(forestID, f"Updated batch of {len(batch)} records: {updated_ids}")
         else:
-            print(f"Failed batch update: {batch}")
+            log(forestID, f"Failed batch update")
             response = {
                 'statusCode': airtableResponse.status_code,
                 'body': json.dumps({'error': 'Failed to update records to Airtable', 'details': airtableResponse.json()})
             }
             return add_cors_headers(response)
 
-    print("Creating records in batches...")
+    log(forestID, f"Creating records in batches...")
     for i in range(0, len(records_to_create), batch_size):
         batch = records_to_create[i:i + batch_size]
         airtableResponse = batch_create_airtable_records(batch, AIRTABLE_API_URL)
         if airtableResponse.status_code in [200, 201]:
             created_ids = [record['fields']['bestand_id'] for record in batch]
-            print(f"Created batch of {len(batch)} records: {created_ids}")
+            log(forestID, f"Created batch of {len(batch)} records: {created_ids}")
         else:
-            print(f"Failed batch create")
+            log(forestID, f"Failed batch create")
             response = {
                 'statusCode': airtableResponse.status_code,
                 'body': json.dumps({'error': 'Failed to create records to Airtable', 'details': airtableResponse.json()})
             }
             return add_cors_headers(response)
 
-    print("Data update completed.")
+    log(forestID, "Data update completed.")
     response = {
         'statusCode': 200,
         'body': json.dumps({'message': 'Data update completed'})

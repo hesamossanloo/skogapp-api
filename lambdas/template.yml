@@ -295,7 +295,7 @@ Resources:
   SkogAppHKCut:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKCut-V3.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKCut-V4.zip
       Description: 'Cut the Forest SVG and PNG from Nibio HK WMS based on the given GeoJSON'
       FunctionName: SkogAppHKCut
       MemorySize: 128
@@ -365,7 +365,7 @@ Resources:
   SkogAppHKVectorize:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V16.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V17.zip
       Description: 'Vectorize the Forest SVG and SHP from Nibio HK WMS based on the given GeoJSON'
       FunctionName: SkogAppHKVectorize
       MemorySize: 128
@@ -456,7 +456,7 @@ Resources:
   SkogAppHKFeatureInfo:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureInfo-V6.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureInfo-V7.zip
       Description: 'Get the Feature Info from Nibio HK WMS based on the created SHP file on S3'
       Handler: lambda_function.lambda_handler
       FunctionName: SkogAppHKFeatureInfo
@@ -524,7 +524,7 @@ Resources:
   SkogAppHKFeatureAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureAirtable-V9.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureAirtable-V10.zip
       Description: 'Get the Feature Info SHP file n S3 and creates an Airtable for the user'
       Handler: lambda_function.lambda_handler
       FunctionName: SkogAppHKFeatureAirtable
@@ -593,7 +593,7 @@ Resources:
   SkogAppSR16IntersectionToAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppSR16IntersectionToAirtable-V8.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppSR16IntersectionToAirtable-V9.zip
       Description: 'Intersect the SR16 data with the given GeoJSON and send the data to Airtable'
       FunctionName: SkogAppSR16IntersectionToAirtable
       MemorySize: 128
@@ -672,7 +672,7 @@ Resources:
   SkogAppModelToAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppModelToAirtable-V2.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppModelToAirtable-V3.zip
       Description: 'Create the Bio growth model based on the data from Airtable'
       FunctionName: SkogAppModelToAirtable
       MemorySize: 128

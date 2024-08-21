@@ -1,23 +1,11 @@
-# import json
-# import os
-# import geopandas as gpd
-# import pandas as pd
 from flask import Blueprint, Flask, request, jsonify
-# import psycopg2
-# from pyairtable import Api
-
 import csv
-import boto3
 import json
 import os
-
-# import geopandas as gpd
-# import pandas as pd
 import fiona
 from shapely.geometry import shape
 from shapely.validation import explain_validity
 from pyproj import CRS, Transformer
-    
 import psycopg2
 from pyairtable import Api
 

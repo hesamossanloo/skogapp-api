@@ -8,6 +8,13 @@ import pandas as pd
 #(For HK 5 the average was 0.86 and even for HK2 the value was 0.85. as such 0.86 is good enough for now)
 adjustment_factor_bark = 0.86
 
+def log(forestID, message):
+    if forestID:
+        print(f"forestID: {forestID} - {message}")
+    else:
+        forestID = "unknown"
+        print(f"forestID: {forestID} - {message}")
+        
 def add_cors_headers(response):
     response['headers'] = {
         'Access-Control-Allow-Origin': '*',
@@ -16,8 +23,8 @@ def add_cors_headers(response):
     }
     return response
 
-def load_data(df):
-    print("Bio_growth: Loading data!")
+def load_data(df, forestID):
+    log(forestID, "Bio_growth: Loading data!")
     # Copy only certain columns from df to df_bestander
     df_bestander = df[['bestand_id', 'hogstkl_verdi', 'bonitet', 'treslag', 'arealm2', 'alder', 'srhoydeo', 'srtrean', 'srgrflate', 'srvolmb', 'srvolub']].copy()
     
@@ -28,11 +35,11 @@ def load_data(df):
     # Adding a new column 'G1' for grunnlflate. Taking the starting value from SR16V
     df_bestander['G1'] = df_bestander['srgrflate']
 
-    print("Bio_growth: reaidng CSVs!")
+    log(forestID, "Bio_growth: CSVs read!")
     # Load the H40 bonitetstables for Gran and Furu
     df_GH40 = pd.read_csv('Bonitetstabell_calculations-Gran_H40.csv')
     df_FH40 = pd.read_csv('Bonitetstabell_calculations-Furu_H40.csv')
-    print("Bio_growth: CSVs read!")
+    log(forestID, "Bio_growth: CSVs read!")
     
     merged_df_gran = pd.merge(df_bestander, df_GH40[['H40', 'Ht40']], left_on='bonitet', right_on='H40', how='left')
     merged_df_furu = pd.merge(df_bestander, df_FH40[['H40', 'Ht40']], left_on='bonitet', right_on='H40', how='left')
@@ -90,7 +97,6 @@ def func_gran_H02(H01, A1, A2):
 #If we set GE = GF = 1, we can run the formula w/o thinning
 
 def gran_N2_per_hectare(N1_per_hectare, A1, A2, Ht40, GE=1, GF=1):
-
     #If the starting age is <5 then we return np.nan
     if A1 < 3 :
         return np.nan
@@ -100,7 +106,6 @@ def gran_N2_per_hectare(N1_per_hectare, A1, A2, Ht40, GE=1, GF=1):
     return N2_per_hectare
 
 def furu_N2_per_hectare(N1_per_hectare, A1, A2, Ht40, GE=1, GF=1):
-
     #If the starting age is <5 then we return np.nan
     if A1 < 3 :
         return np.nan
@@ -112,7 +117,6 @@ def furu_N2_per_hectare(N1_per_hectare, A1, A2, Ht40, GE=1, GF=1):
 
 # Function to calculate N per hectare based on the starting density and the age of the stand
 def calculate_N_per_hectare(row, N1_per_hectare_column, A1=None, A2=None, GE=1, GF=1):
-    
     #If row['alder'] < 5 we skip the calculation
     if row['alder'] < 5:
         return None
@@ -212,7 +216,6 @@ def apply_nextyear_volume_per_hectare(row):
 # Now we'll add some prices. For now we'll hardcode them here. They are to be found in a pivot table her: https://docs.google.com/spreadsheets/d/1ureXZOBXxLmzsFuTkJ0CiXRtvY-rW7P1tyWMyABhYG8/edit#gid=39508882
 # Based on monthly published data from Landbruksdirektoratet
 # We use the prices for Akershus, looking only at sagtømmer (saw wood) and massevirke (pulpwood)
-#
 
 #Extremely simple breakdown sagtømmer vs massevirke
 def saw_wood_portion(row):
@@ -410,8 +413,8 @@ def wood_to_carbon(wood_volume):
 
     return carbon_stored
 
-def main(df=None, yield_requirement = 0.03):
-    print("Bio_growth: Starting main function!")
+def main(df=None, yield_requirement = 0.03, forestID = None):
+    log(forestID, "Bio_growth: Starting main function!")
     #Setting up, loading, and cleaning the data
     if df is None:
         response = {
@@ -420,9 +423,9 @@ def main(df=None, yield_requirement = 0.03):
         }
         return add_cors_headers(response)
     else:
-        df_bestander = load_data(df)
+        df_bestander = load_data(df, forestID)
 
-    print("Bio_growth: Data loaded!")
+    log(forestID, "Bio_growth: Data loaded!")
     # Apply the grain height growth function to compute yearly height growth for 'Gran' rows in the dataframe
     gran_filter = df_bestander['treslag'] == 'Gran'
     df_bestander.loc[gran_filter, 'yearly_height_growth'] = df_bestander[gran_filter].apply(lambda row: func_gran_H02(row['height'], row['alder'], row['alder'] + 1), axis=1) - df_bestander.loc[gran_filter, 'height']
@@ -459,28 +462,28 @@ def main(df=None, yield_requirement = 0.03):
 
     #Now we move on to calculating the future values
     #First we calculate the future heights of the stands
-    print("Bio_growth: Calculating future values!")
+    log(forestID, "Bio_growth: Calculating future values!")
     df_bestand_height_100years = calculate_future_heights(df_bestander, gran_filter, furu_filter)
     #Then we calculate the future N per hectare for each stand
-    print("Bio_growth: Calculating future N per hectare!")
+    log(forestID, "Bio_growth: Calculating future N per hectare!")
     df_bestand_N_per_hectare_100years = calculate_future_N_per_hectare(df_bestander, df_bestand_height_100years, gran_filter, furu_filter)
-    print("Bio_growth: Calculating future base area!")
+    log(forestID, "Bio_growth: Calculating future base area!")
     #Then we calculate the future base area for each stand
     df_bestand_G_100years = calculate_future_base_area(df_bestander, df_bestand_height_100years, df_bestand_N_per_hectare_100years, gran_filter, furu_filter)
-    print("Bio_growth: Calculating future volume per hectare!")
+    log(forestID, "Bio_growth: Calculating future volume per hectare!")
     #Then we calculate the future volume per hectare for each stand
     df_bestand_volume_per_hectare_100years = calculate_future_volume_per_hectare(df_bestander, df_bestand_height_100years, df_bestand_G_100years, gran_filter, furu_filter)
-    print("Bio_growth: Calculating future growth rate!")
+    log(forestID, "Bio_growth: Calculating future growth rate!")
     #Then we calculate the future growth rate per year for each stand
     df_bestand_growth_rate_100years = calculate_future_growth_rate(df_bestand_volume_per_hectare_100years)
-    print("Bio_growth: Calculating years to maturity!")
+    log(forestID, "Bio_growth: Calculating years to maturity!")
     #Then we calculate the years to maturity for each stand and the volume at maturity
     df_bestander = calculate_years_to_maturity(df_bestander, df_bestand_growth_rate_100years, yield_requirement)
-    print("Bio_growth: Calculating volume at maturity!")
+    log(forestID, "Bio_growth: Calculating volume at maturity!")
     #And finally we calculate the volume at maturity for each stand
     df_bestander = calculate_volume_at_maturity(df_bestander, df_bestand_volume_per_hectare_100years)
     #And adding a column for volume at maturity without bark
     df_bestander['volume_at_maturity_without_bark'] = adjustment_factor_bark * df_bestander['volume_at_maturity']
 
-    print("Bio_growth: Done calculating future values! Returning the dataframe!")
+    log(forestID, "Bio_growth: Done calculating future values! Returning the dataframe!")
     return df_bestander
