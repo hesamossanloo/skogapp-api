@@ -29,7 +29,7 @@ def create_query(inputs):
     return query
 
 
-@main.route('/filter', methods=['POST'])
+@main.route('/find', methods=['POST'])
 def filter_features():
     print("Filtering features")
     data = request.get_json()
