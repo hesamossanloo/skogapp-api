@@ -10,18 +10,17 @@ import shapefile
 shapefile.VERBOSE = False
 
 from shapely.geometry import shape, Polygon, MultiPolygon, LinearRing
-from shapely.validation import make_valid
+from shapely.validation import make_valid, explain_validity
+from shapely.ops import unary_union
 
 # Get the directory of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define paths relative to the script's directory
-downloaded_file_name = "HOuJBvE84aPWtDJCym19nt1sUep1_HK_image_cut"
-# downloaded_file_name = "downloaded_image"
-downloaded_svg_from_cut_path = os.path.join(script_dir, f"outputs/vectorize/{downloaded_file_name}.svg")
-# downloaded_svg_from_cut_path = os.path.join(script_dir, f"outputs/vectorize/{file_name}.svg")
-shp_from_svg_cut_path = os.path.join(script_dir, f"outputs/vectorize/{downloaded_file_name}.shp")
-save_intersected_geojson_shp_path = os.path.join(script_dir, f"outputs/vectorize/intersected_image.shp")
+forestID = "hDVCY6kT3XbEUu7FjcevxdgFash1"
+downloaded_svg_from_cut_path = os.path.join(script_dir, f"outputs/vectorize/{forestID}.svg")
+shp_from_svg_cut_path = os.path.join(script_dir, f"outputs/vectorize/{forestID}_whole_image.shp")
+save_intersected_geojson_shp_path = os.path.join(script_dir, f"outputs/vectorize/{forestID}_intersected_image.shp")
 
 # Create a projection file
 prj_content = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]"""
@@ -89,29 +88,54 @@ def convert_path_to_polygon(path_data, svg_width, svg_height, bbox):
 
 def create_polygons_from_paths(paths, tolerance=1e-9, simplify_tolerance=1e-6):
     unique_polygons = []
-    
+    print(f"Number of paths: {len(paths)}")
+    count = 0
     for path in paths:
-        if len(path) > 1:
-            # First ring is the exterior, the rest are holes
-            exterior = LinearRing(path[0])
-            holes = [LinearRing(hole) for hole in path[1:] if len(hole) > 3]  # Ensure holes are valid rings
-            polygon = Polygon(shell=exterior, holes=holes)
-        else:
-            # Only one ring, no holes
-            exterior = LinearRing(path[0])
-            polygon = Polygon(shell=exterior)
+        print(f"Processing path {count}")
+        try:
+            if len(path) > 1:
+                print(f"Path has multiple rings: {path}\n")
+                # First ring is the exterior, the rest are holes
+                exterior = LinearRing(path[0])
+                holes = [LinearRing(hole) for hole in path[1:] if len(hole) > 3]  # Ensure holes are valid rings
+                polygon = Polygon(shell=exterior, holes=holes)
+                print(f"Processed exterior and holes for path {count}\n")
+            else:
+                print(f"Path has a single ring: {path}\n")
+                # Only one ring, no holes
+                exterior = LinearRing(path[0])
+                polygon = Polygon(shell=exterior)
+                print(f"Processed single ring for path {count}\n")
 
-        # Simplify the polygon slightly to remove small variations
-        simplified_polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
+            # Validate and fix the polygon if necessary
+            if not polygon.is_valid:
+                print(f"Invalid polygon detected: {explain_validity(polygon)}")
+                polygon = polygon.buffer(0)  # Attempt to fix the polygon
+                if not polygon.is_valid:
+                    print(f"Polygon could not be fixed with buffer(0): {explain_validity(polygon)}")
+                    polygon = unary_union([polygon])  # Attempt to fix with unary_union
+                    if not polygon.is_valid:
+                        print(f"Polygon could not be fixed with unary_union: {explain_validity(polygon)}")
+                        continue  # Skip this polygon if it cannot be fixed
 
-        # Normalize the polygon by buffering with a small distance and then reversing the buffer
-        normalized_polygon = simplified_polygon.buffer(tolerance).buffer(-tolerance)
+            # Simplify the polygon slightly to remove small variations
+            simplified_polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
 
-        # Check if this normalized polygon is equal to any existing one
-        is_duplicate = any(existing_polygon.equals(normalized_polygon) for existing_polygon in unique_polygons)
-        
-        if not is_duplicate:
-            unique_polygons.append(normalized_polygon)
+            # Normalize the polygon by buffering with a small distance and then reversing the buffer
+            normalized_polygon = simplified_polygon.buffer(tolerance).buffer(-tolerance)
+
+            print("Checking for duplicates...\n")
+            # Check if this normalized polygon is equal to any existing one
+            is_duplicate = any(existing_polygon.equals(normalized_polygon) for existing_polygon in unique_polygons)
+
+            if not is_duplicate:
+                print("Adding to unique polygons")
+                unique_polygons.append(normalized_polygon)
+            print(f"Finished processing path {count}\n")
+            count += 1
+        except Exception as e:
+            print(f"Exception occurred: {e}")
+            continue
 
     return unique_polygons
 
