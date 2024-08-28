@@ -3,6 +3,7 @@ import requests
 import os
 import pandas as pd
 import Bio_growth
+import numpy as np
 
 # Airtable configuration
 AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv('AIRTABLE_PERSONAL_ACCESS_TOKEN')
@@ -187,6 +188,6 @@ def lambda_handler(event, context):
 
 event = {
     'httpMethod': 'POST',
-    'body': json.dumps({'yield_requirement': 0.03, 'forestID': '9N2IaTGI3gfNdePUOTNNGwzyiqP2'})
+    'body': json.dumps({'yield_requirement': 0.03, 'forestID': 'xyoLZbElc5XRbcshW5G4P9urfEF3'})
 }
 model(event)
