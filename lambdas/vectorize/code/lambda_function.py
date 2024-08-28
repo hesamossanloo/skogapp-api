@@ -5,7 +5,8 @@ import shapefile
 shapefile.VERBOSE = False
 
 from shapely.geometry import shape, Polygon, MultiPolygon, LinearRing
-from shapely.validation import make_valid
+from shapely.validation import make_valid, explain_validity
+from shapely.ops import unary_union
 import boto3
 
 s3 = boto3.client('s3')
@@ -92,29 +93,48 @@ def convert_path_to_polygon(path_data, svg_width, svg_height, bbox):
 
 def create_polygons_from_paths(paths, tolerance=1e-9, simplify_tolerance=1e-6):
     unique_polygons = []
-    
+    print(f"Number of paths: {len(paths)}")
+    count = 0
     for path in paths:
-        if len(path) > 1:
-            # First ring is the exterior, the rest are holes
-            exterior = LinearRing(path[0])
-            holes = [LinearRing(hole) for hole in path[1:] if len(hole) > 3]  # Ensure holes are valid rings
-            polygon = Polygon(shell=exterior, holes=holes)
-        else:
-            # Only one ring, no holes
-            exterior = LinearRing(path[0])
-            polygon = Polygon(shell=exterior)
+        print(f"Processing path {count}")
+        try:
+            if len(path) > 1:
+                # First ring is the exterior, the rest are holes
+                exterior = LinearRing(path[0])
+                holes = [LinearRing(hole) for hole in path[1:] if len(hole) > 3]  # Ensure holes are valid rings
+                polygon = Polygon(shell=exterior, holes=holes)
+            else:
+                # Only one ring, no holes
+                exterior = LinearRing(path[0])
+                polygon = Polygon(shell=exterior)
 
-        # Simplify the polygon slightly to remove small variations
-        simplified_polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
+            # Validate and fix the polygon if necessary
+            if not polygon.is_valid:
+                print(f"Invalid polygon detected: {explain_validity(polygon)}")
+                polygon = polygon.buffer(0)  # Attempt to fix the polygon
+                if not polygon.is_valid:
+                    print(f"Polygon could not be fixed with buffer(0): {explain_validity(polygon)}")
+                    polygon = unary_union([polygon])  # Attempt to fix with unary_union
+                    if not polygon.is_valid:
+                        print(f"Polygon could not be fixed with unary_union: {explain_validity(polygon)}")
+                        continue  # Skip this polygon if it cannot be fixed
 
-        # Normalize the polygon by buffering with a small distance and then reversing the buffer
-        normalized_polygon = simplified_polygon.buffer(tolerance).buffer(-tolerance)
+            # Simplify the polygon slightly to remove small variations
+            simplified_polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
 
-        # Check if this normalized polygon is equal to any existing one
-        is_duplicate = any(existing_polygon.equals(normalized_polygon) for existing_polygon in unique_polygons)
-        
-        if not is_duplicate:
-            unique_polygons.append(normalized_polygon)
+            # Normalize the polygon by buffering with a small distance and then reversing the buffer
+            normalized_polygon = simplified_polygon.buffer(tolerance).buffer(-tolerance)
+
+            # Check if this normalized polygon is equal to any existing one
+            is_duplicate = any(existing_polygon.equals(normalized_polygon) for existing_polygon in unique_polygons)
+
+            if not is_duplicate:
+                unique_polygons.append(normalized_polygon)
+            print(f"Finished processing path {count}\n")
+            count += 1
+        except Exception as e:
+            print(f"Exception occurred: {e}")
+            continue
 
     return unique_polygons
 
