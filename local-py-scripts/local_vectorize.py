@@ -94,18 +94,14 @@ def create_polygons_from_paths(paths, tolerance=1e-9, simplify_tolerance=1e-6):
         print(f"Processing path {count}")
         try:
             if len(path) > 1:
-                print(f"Path has multiple rings: {path}\n")
                 # First ring is the exterior, the rest are holes
                 exterior = LinearRing(path[0])
                 holes = [LinearRing(hole) for hole in path[1:] if len(hole) > 3]  # Ensure holes are valid rings
                 polygon = Polygon(shell=exterior, holes=holes)
-                print(f"Processed exterior and holes for path {count}\n")
             else:
-                print(f"Path has a single ring: {path}\n")
                 # Only one ring, no holes
                 exterior = LinearRing(path[0])
                 polygon = Polygon(shell=exterior)
-                print(f"Processed single ring for path {count}\n")
 
             # Validate and fix the polygon if necessary
             if not polygon.is_valid:
@@ -124,12 +120,10 @@ def create_polygons_from_paths(paths, tolerance=1e-9, simplify_tolerance=1e-6):
             # Normalize the polygon by buffering with a small distance and then reversing the buffer
             normalized_polygon = simplified_polygon.buffer(tolerance).buffer(-tolerance)
 
-            print("Checking for duplicates...\n")
             # Check if this normalized polygon is equal to any existing one
             is_duplicate = any(existing_polygon.equals(normalized_polygon) for existing_polygon in unique_polygons)
 
             if not is_duplicate:
-                print("Adding to unique polygons")
                 unique_polygons.append(normalized_polygon)
             print(f"Finished processing path {count}\n")
             count += 1
