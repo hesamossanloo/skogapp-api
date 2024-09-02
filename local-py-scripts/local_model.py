@@ -3,7 +3,6 @@ import requests
 import os
 import pandas as pd
 import Bio_growth
-import numpy as np
 
 # Airtable configuration
 AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv('AIRTABLE_PERSONAL_ACCESS_TOKEN')
