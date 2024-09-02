@@ -97,7 +97,7 @@ airtable_fields = [
     {'name': 'years_to_maturity', 'type': 'number', 'options': {'precision': 8}},
     {'name': 'volume_at_maturity', 'type': 'number', 'options': {'precision': 8}},
     {'name': 'volume_at_maturity_without_bark', 'type': 'number', 'options': {'precision': 8}},
-    {'name': 'yield_requirement', 'type': 'number', 'options': {'precision': 1}},
+    {'name': 'yield_requirement', 'type': 'number', 'options': {'precision': 3}},
 ]
 def log(forestID, message):
     if forestID:

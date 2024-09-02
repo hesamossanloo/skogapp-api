@@ -65,7 +65,7 @@ STEP 3 COPY ZIP:
 docker cp lambda:/tmp/package.zip SkogAppModelToAirtable-V4.zip
 docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V9.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureInfo-V7.zip
-docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V10.zip
+docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V11.zip
 docker cp lambda:/tmp/package.zip SkogAppHKCut-V4.zip
 docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V18.zip
 
