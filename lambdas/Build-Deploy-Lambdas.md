@@ -55,19 +55,12 @@ docker run --name lambda -w /var/task --volume $(pwd):/local -itd skogapp-cut:la
 docker exec -it lambda bash
 python -c "import numpy; print(numpy.__version__)"
 python -c "from osgeo import gdal; print(gdal.__version__)"
-python -c "import xml.etree.ElementTree as ET"
-python -c "import geopandas as gpd"
-python -c "import pandas as pd"
-python -c "from urllib.parse import urlencode"
-python -c "import shapefile; import re; from shapely.geometry import shape, mapping"
-python -c "import shapefile; import requests"
-python -c "import shapefile; from pyairtable import Api"
 python /var/task/lambda_function.py event.json
 docker cp lambda:/tmp/package.zip SkogAppModelToAirtable-V3.zip
 docker cp lambda:/tmp/package.zip SkogAppSR16IntersectionToAirtable-V9.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureInfo-V7.zip
 docker cp lambda:/tmp/package.zip SkogAppHKFeatureAirtable-V10.zip
 docker cp lambda:/tmp/package.zip SkogAppHKCut-V4.zip
-docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V17.zip
+docker cp lambda:/tmp/package.zip SkogAppHKVectorize-V18.zip
 docker stop lambda
 docker rm lambda
