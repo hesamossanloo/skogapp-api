@@ -227,7 +227,7 @@ Resources:
       Description: 'Find the Forest GeoJSON based on given Kommunenummer and Matrikkelnummer'
       FunctionName: SkogAppTeigFinder
       MemorySize: 128
-      Timeout: 5
+      Timeout: 15
       Handler: lambda_function.lambda_handler
       Runtime: python3.11
       Architectures:
@@ -365,7 +365,7 @@ Resources:
   SkogAppHKVectorize:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V17.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKVectorize-V18.zip
       Description: 'Vectorize the Forest SVG and SHP from Nibio HK WMS based on the given GeoJSON'
       FunctionName: SkogAppHKVectorize
       MemorySize: 512
