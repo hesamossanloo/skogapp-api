@@ -524,7 +524,7 @@ Resources:
   SkogAppHKFeatureAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureAirtable-V10.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppHKFeatureAirtable-V11.zip
       Description: 'Get the Feature Info SHP file n S3 and creates an Airtable for the user'
       Handler: lambda_function.lambda_handler
       FunctionName: SkogAppHKFeatureAirtable
