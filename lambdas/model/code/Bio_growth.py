@@ -35,7 +35,7 @@ def load_data(df, forestID):
     # Adding a new column 'G1' for grunnlflate. Taking the starting value from SR16V
     df_bestander['G1'] = df_bestander['srgrflate']
 
-    log(forestID, "Bio_growth: CSVs read!")
+    log(forestID, "Bio_growth: reading CSVs!")
     # Load the H40 bonitetstables for Gran and Furu
     df_GH40 = pd.read_csv('Bonitetstabell_calculations-Gran_H40.csv')
     df_FH40 = pd.read_csv('Bonitetstabell_calculations-Furu_H40.csv')
@@ -460,6 +460,9 @@ def main(df=None, yield_requirement = 0.03, forestID = None):
     #Adding carbon captured per year based on yearly growth in volume
     df_bestander['carbon_captured_next_year'] = wood_to_carbon(df_bestander['volume_growth_next_year'])
 
+    #Adding a column "yield_requirement" to keep track of the yield requirement used for this calculation
+    df_bestander['yield_requirement'] = yield_requirement
+    
     #Now we move on to calculating the future values
     #First we calculate the future heights of the stands
     log(forestID, "Bio_growth: Calculating future values!")

@@ -672,7 +672,7 @@ Resources:
   SkogAppModelToAirtable:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppModelToAirtable-V3.zip
+      CodeUri: s3://skogapp-lambda-only-deployment-zips/SkogAppModelToAirtable-V4.zip
       Description: 'Create the Bio growth model based on the data from Airtable'
       FunctionName: SkogAppModelToAirtable
       MemorySize: 512
