@@ -3,7 +3,7 @@ was solved by following this:
 https://github.com/lambgeo/docker-lambda
 
 # STEP 1: Build Lambdas
-You Lambda shoul have this structure:
+You Lambda should have this structure:
 `lambdas/filter/code/`:
 
 `lambda_function.py`,
@@ -15,7 +15,7 @@ and run this command:
 ```
 sam build
 ```
-After that `.aws-sam` folder is created under `code`. Check if you have al lthe necessary libs and py files.
+After that `.aws-sam` folder is created under `code`. Check if you have all the necessary libs and py files.
 
 # STEP 2: Package Lambdas
 After a successfull build. You should use the name of the S3 bucket you created earlier and create a package for your lambda, by running this:
